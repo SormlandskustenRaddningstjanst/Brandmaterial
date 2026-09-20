@@ -92,7 +92,7 @@
 
       <div id="checkoutPanel" class="panel">
         <h3>Välj fordon</h3>
-        <p class="muted">Ingen ändring sparas ännu. Detta är testläge.</p>
+        <p class="muted">Endast aktiva fordon på samma station visas. Valet sparas efter bekräftelse.</p>
         <div id="vehiclesList"></div>
       </div>
 
@@ -237,9 +237,35 @@ el("checkoutBtn").addEventListener("click", async () => {
 
   try {
     const rows = await apiGet("/vehicles");
-    const active = rows.filter(row => row["Aktiv"] === true);
+
+    // Hämta materialet på nytt så att vi använder aktuell stationsplacering.
+    const currentMaterial = await apiGet("/material/" + encodeURIComponent(material));
+    const materialStations = Array.isArray(currentMaterial["Station"])
+      ? currentMaterial["Station"].map(x => Number(x.id)).filter(Number.isInteger)
+      : [];
+
+    if (currentMaterial["Lagertyp"] !== "Stationslager" || materialStations.length !== 1) {
+      throw new Error("Materialet måste vara incheckat på ett stationslager före utcheckning.");
+    }
+
+    const currentStationId = materialStations[0];
+
+    const active = rows.filter(row => {
+      if (row["Aktiv"] !== true) return false;
+      const vehicleStations = Array.isArray(row["Station"])
+        ? row["Station"].map(x => Number(x.id)).filter(Number.isInteger)
+        : [];
+      return vehicleStations.length === 1 && vehicleStations[0] === currentStationId;
+    });
 
     el("vehiclesList").innerHTML = "";
+
+    if (active.length === 0) {
+      el("vehiclesList").innerHTML =
+        '<div class="message error active">Inga aktiva fordon hittades på materialets station.</div>';
+      return;
+    }
+
     active.forEach(row => {
       const rakel = Array.isArray(row["Rakelnummer"])
         ? row["Rakelnummer"].map(x => x.value).filter(Boolean).join(", ")
@@ -320,13 +346,60 @@ async function selectStation(row) {
   }
 }
 
-function selectVehicle(row, rakel, reg) {
+async function selectVehicle(row, rakel, reg) {
+  const vehicleLabel = [rakel, reg].filter(Boolean).join(" – ");
+
+  if (!confirm("Checka ut " + material + " till " + vehicleLabel + "?")) {
+    return;
+  }
+
+  el("selectionMessage").className = "message info active";
   el("selectionMessage").innerHTML =
-    "<strong>Testläge – inget har sparats.</strong><br>" +
-    escapeHtml(material) + " skulle checkas ut till <strong>" +
-    escapeHtml([rakel, reg].filter(Boolean).join(" – ")) + "</strong>." +
-    "<br>Baserow fordons-ID: " + Number(row.id);
-  el("selectionMessage").classList.add("active");
+    "<strong>Sparar…</strong><br>Checkar ut " +
+    escapeHtml(material) + " till " + escapeHtml(vehicleLabel) + ".";
+
+  el("checkinBtn").disabled = true;
+  el("checkoutBtn").disabled = true;
+
+  try {
+    const response = await fetch(API + "/checkout", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        materialId: material,
+        vehicleId: Number(row.id)
+      })
+    });
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error("API:t gav ett ogiltigt svar.");
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || "Utcheckningen misslyckades.");
+    }
+
+    el("selectionMessage").className = "message info active";
+    el("selectionMessage").innerHTML =
+      "<strong>✓ Utcheckningen är sparad.</strong><br>" +
+      escapeHtml(data.message || (material + " är utcheckat till " + vehicleLabel + "."));
+
+    el("currentLocation").textContent = vehicleLabel;
+    el("lagerType").textContent = "Fordon";
+    el("checkoutPanel").classList.remove("active");
+  } catch (err) {
+    el("selectionMessage").className = "message error active";
+    el("selectionMessage").innerHTML =
+      "<strong>Utcheckningen misslyckades.</strong><br>" + escapeHtml(err.message);
+  } finally {
+    el("checkinBtn").disabled = false;
+    el("checkoutBtn").disabled = false;
+  }
 }
 
 function escapeHtml(value) {
