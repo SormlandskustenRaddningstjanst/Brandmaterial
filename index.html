@@ -1,146 +1,35 @@
-
 <!DOCTYPE html>
 <html lang="sv">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <title>Rökskydd – Lager och materialhantering</title>
-
   <style>
-    :root {
-      --primary: #1f4e79;
-      --primary-dark: #163957;
-      --background: #f3f5f7;
-      --card: #ffffff;
-      --text: #1f2933;
-      --muted: #667085;
-      --border: #d9e0e7;
-      --success: #237a57;
-      --warning: #a15c00;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
-      background: var(--background);
-      color: var(--text);
-    }
-
-    header {
-      background: var(--primary);
-      color: white;
-      padding: 28px 20px;
-      text-align: center;
-    }
-
-    header h1 {
-      margin: 0 0 10px;
-      font-size: 1.8rem;
-    }
-
-    header p {
-      margin: 0;
-      opacity: 0.9;
-    }
-
-    main {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 24px 16px 40px;
-    }
-
-    .section {
-      margin-bottom: 28px;
-    }
-
-    .section h2 {
-      margin: 0 0 14px;
-      font-size: 1.3rem;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-    }
-
-    .card {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 20px;
-      min-height: 170px;
-      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.04);
-    }
-
-    .card h3 {
-      margin: 0 0 10px;
-      font-size: 1.1rem;
-    }
-
-    .card p {
-      margin: 0 0 18px;
-      color: var(--muted);
-      line-height: 1.5;
-      font-size: 0.95rem;
-    }
-
-    .button {
-      display: inline-block;
-      width: 100%;
-      padding: 13px 16px;
-      border-radius: 9px;
-      background: var(--primary);
-      color: white;
-      text-decoration: none;
-      text-align: center;
-      font-weight: bold;
-      transition: background 0.2s ease;
-    }
-
-    .button:hover {
-      background: var(--primary-dark);
-    }
-
-    .button.green {
-      background: var(--success);
-    }
-
-    .button.orange {
-      background: var(--warning);
-    }
-
-    .footer {
-      margin-top: 32px;
-      text-align: center;
-      color: var(--muted);
-      font-size: 0.85rem;
-    }
-
-    @media (max-width: 480px) {
-      header h1 {
-        font-size: 1.45rem;
-      }
-
-      main {
-        padding: 20px 12px 32px;
-      }
-
-      .card {
-        min-height: auto;
-      }
+    :root { --primary:#1f4e79; --primary-dark:#163957; --background:#f3f5f7; --card:#fff; --text:#1f2933; --muted:#667085; --border:#d9e0e7; --success:#237a57; --warning:#a15c00; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Arial,Helvetica,sans-serif; background:var(--background); color:var(--text); }
+    header { background:var(--primary); color:white; padding:28px 20px; text-align:center; }
+    header h1 { margin:0 0 10px; font-size:1.8rem; }
+    header p { margin:0; opacity:.9; }
+    main { max-width:900px; margin:0 auto; padding:24px 16px 40px; }
+    .section { margin-bottom:28px; }
+    .section h2 { margin:0 0 14px; font-size:1.3rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
+    .card { display:flex; flex-direction:column; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; min-height:170px; box-shadow:0 3px 10px rgba(0,0,0,.04); }
+    .card h3 { margin:0 0 10px; font-size:1.1rem; }
+    .card p { margin:0 0 18px; color:var(--muted); line-height:1.5; font-size:.95rem; }
+    .button { display:inline-block; width:100%; padding:13px 16px; border-radius:9px; background:var(--primary); color:white; text-decoration:none; text-align:center; font-weight:bold; transition:background .2s ease; }
+    .button:hover { background:var(--primary-dark); }
+    .button.green { background:var(--success); }
+    .button.orange { background:var(--warning); }
+    .footer { margin-top:32px; text-align:center; color:var(--muted); font-size:.85rem; }
+    @media (max-width:480px) {
+      header h1 { font-size:1.45rem; }
+      main { padding:20px 12px 32px; }
+      .card { min-height:auto; }
     }
   </style>
 </head>
-
 <body>
   <header>
     <h1>Rökskydd – Lager och materialhantering</h1>
@@ -150,114 +39,68 @@
   <main>
     <section class="section">
       <h2>Materialhantering</h2>
-
       <div class="grid">
         <div class="card">
           <div>
             <h3>📥 Registrera incheckning</h3>
-            <p>
-              Registrera material som kommer tillbaka till en station
-              eller tas emot från ett annat fordon.
-            </p>
+            <p>Registrera material som kommer tillbaka till en station eller tas emot från ett annat fordon.</p>
           </div>
-
-          <a
-            class="button green"
-            href="https://baserow.io/form/4El8xDD_oRZHjA1rgHtjjNeMZatQbpNFoqm7NyQ0xSA"
-            target="_blank"
-            rel="noopener noreferrer">
-            Öppna incheckning
-          </a>
+          <a class="button green" href="https://baserow.io/form/4El8xDD_oRZHjA1rgHtjjNeMZatQbpNFoqm7NyQ0xSA" target="_blank" rel="noopener noreferrer">Öppna incheckning</a>
         </div>
 
         <div class="card">
           <div>
             <h3>📤 Registrera utcheckning</h3>
-            <p>
-              Registrera material som placeras på ett fordon
-              eller lämnar stationslagret.
-            </p>
+            <p>Registrera material som placeras på ett fordon eller lämnar stationslagret.</p>
           </div>
-
-          <a
-            class="button"
-            href="https://baserow.io/form/FhL3IbTcRr7KB3PP8epB1XoPJdFwht93mehDYiFbOlU"
-            target="_blank"
-            rel="noopener noreferrer">
-            Öppna utcheckning
-          </a>
+          <a class="button" href="https://baserow.io/form/FhL3IbTcRr7KB3PP8epB1XoPJdFwht93mehDYiFbOlU" target="_blank" rel="noopener noreferrer">Öppna utcheckning</a>
         </div>
       </div>
     </section>
 
     <section class="section">
       <h2>Lageröversikt</h2>
-
       <div class="grid">
         <div class="card">
           <div>
-            <h3>📦 Lageröversikt</h3>
-            <p>
-              Visa material som finns på stationer och fordon.
-            </p>
+            <h3>🏢 Lageröversikt stationer</h3>
+            <p>Visa material och lagerstatus för stationerna.</p>
           </div>
+          <a class="button" href="https://baserow.io/public/grid/qHxAZjCM3xAF9hQJEvXR8WitVPd_eHWMODbFs4xHRiA" target="_blank" rel="noopener noreferrer">Visa stationer</a>
+        </div>
 
-          <a
-            class="button"
-            href="https://baserow.io/public/grid/jH_yDhMJR5sPvwhJqHin15GnSmYgC45HZSsrAQpSL5M"
-            target="_blank"
-            rel="noopener noreferrer">
-            Öppna lageröversikt
-          </a>
+        <div class="card">
+          <div>
+            <h3>🚒 Lageröversikt fordon</h3>
+            <p>Visa material och lagerstatus för fordonen.</p>
+          </div>
+          <a class="button" href="https://baserow.io/public/grid/fPzJHcHWF4hSP9EruphziqgMU-qUfpo_v5PQBOwdAxM" target="_blank" rel="noopener noreferrer">Visa fordon</a>
         </div>
       </div>
     </section>
 
     <section class="section">
       <h2>Tvättreturer</h2>
-
       <div class="grid">
         <div class="card">
           <div>
             <h3>🧺 Pågående tvättreturer</h3>
-            <p>
-              Följ material som har skickats till tvätt
-              och väntar på att tas emot.
-            </p>
+            <p>Följ material som har skickats till tvätt och väntar på att tas emot.</p>
           </div>
-
-          <a
-            class="button"
-            href="https://baserow.io/public/grid/AdmF2DpAHhGkqmGC2JxWP2CM1J_t5P24nGfMsHXyeMo"
-            target="_blank"
-            rel="noopener noreferrer">
-            Visa pågående returer
-          </a>
+          <a class="button" href="https://baserow.io/public/grid/AdmF2DpAHhGkqmGC2JxWP2CM1J_t5P24nGfMsHXyeMo" target="_blank" rel="noopener noreferrer">Visa pågående returer</a>
         </div>
 
         <div class="card">
           <div>
             <h3>⚠️ Avvikelser</h3>
-            <p>
-              Visa tvättreturer som har registrerade avvikelser
-              eller behöver kontrolleras.
-            </p>
+            <p>Visa tvättreturer som har registrerade avvikelser eller behöver kontrolleras.</p>
           </div>
-
-          <a
-            class="button orange"
-            href="https://baserow.io/public/grid/cqwL7M9m66JAN2mhfWDM7RezTAPNCCLfQX5xw-fFE9o"
-            target="_blank"
-            rel="noopener noreferrer">
-            Visa avvikelser
-          </a>
+          <a class="button orange" href="https://baserow.io/public/grid/cqwL7M9m66JAN2mhfWDM7RezTAPNCCLfQX5xw-fFE9o" target="_blank" rel="noopener noreferrer">Visa avvikelser</a>
         </div>
       </div>
     </section>
 
-    <div class="footer">
-      Rökskydd – intern materialhantering
-    </div>
+    <div class="footer">Rökskydd – intern materialhantering</div>
   </main>
 </body>
 </html>
