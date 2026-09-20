@@ -5,7 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rökskydd – Lager och materialhantering</title>
   <style>
-    :root { --primary:#1f4e79; --primary-dark:#163957; --background:#f3f5f7; --card:#fff; --text:#1f2933; --muted:#667085; --border:#d9e0e7; --success:#237a57; --warning:#a15c00; }
+    :root {
+      --primary:#1f4e79;
+      --primary-dark:#163957;
+      --background:#f3f5f7;
+      --card:#ffffff;
+      --text:#1f2933;
+      --muted:#667085;
+      --border:#d9e0e7;
+      --success:#237a57;
+      --warning:#a15c00;
+    }
     * { box-sizing:border-box; }
     body { margin:0; font-family:Arial,Helvetica,sans-serif; background:var(--background); color:var(--text); }
     header { background:var(--primary); color:white; padding:28px 20px; text-align:center; }
@@ -15,13 +25,32 @@
     .section { margin-bottom:28px; }
     .section h2 { margin:0 0 14px; font-size:1.3rem; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
-    .card { display:flex; flex-direction:column; justify-content:space-between; background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; min-height:170px; box-shadow:0 3px 10px rgba(0,0,0,.04); }
+    .card {
+      display:flex; flex-direction:column; justify-content:space-between;
+      background:var(--card); border:1px solid var(--border); border-radius:14px;
+      padding:20px; min-height:170px; box-shadow:0 3px 10px rgba(0,0,0,.04);
+    }
     .card h3 { margin:0 0 10px; font-size:1.1rem; }
     .card p { margin:0 0 18px; color:var(--muted); line-height:1.5; font-size:.95rem; }
-    .button { display:inline-block; width:100%; padding:13px 16px; border-radius:9px; background:var(--primary); color:white; text-decoration:none; text-align:center; font-weight:bold; transition:background .2s ease; }
+    .button {
+      display:inline-block; width:100%; padding:13px 16px; border-radius:9px;
+      background:var(--primary); color:white; text-decoration:none; text-align:center;
+      font-weight:bold; border:0; cursor:pointer;
+    }
     .button:hover { background:var(--primary-dark); }
     .button.green { background:var(--success); }
     .button.orange { background:var(--warning); }
+    .material-banner {
+      display:none; background:#eaf4ff; border:2px solid var(--primary);
+      border-radius:14px; padding:20px; margin-bottom:24px; text-align:center;
+    }
+    .material-banner.active { display:block; }
+    .material-id { font-size:1.6rem; font-weight:700; margin:6px 0 4px; }
+    .error {
+      display:none; background:#fff3e6; border:2px solid var(--warning);
+      border-radius:14px; padding:16px; margin-bottom:24px;
+    }
+    .error.active { display:block; }
     .footer { margin-top:32px; text-align:center; color:var(--muted); font-size:.85rem; }
     @media (max-width:480px) {
       header h1 { font-size:1.45rem; }
@@ -37,23 +66,37 @@
   </header>
 
   <main>
+    <div id="materialBanner" class="material-banner">
+      <div>Skannat material</div>
+      <div id="materialId" class="material-id"></div>
+      <div>Välj vad du vill göra med materialet.</div>
+    </div>
+
+    <div id="materialError" class="error">
+      QR-länken innehåller ett ogiltigt Material-ID. Öppna startsidan och välj funktion manuellt.
+    </div>
+
     <section class="section">
       <h2>Materialhantering</h2>
       <div class="grid">
         <div class="card">
           <div>
             <h3>📥 Registrera incheckning</h3>
-            <p>Registrera material som kommer tillbaka till en station eller tas emot från ett annat fordon.</p>
+            <p id="checkinText">Registrera material som kommer tillbaka till en station eller tas emot från ett annat fordon.</p>
           </div>
-          <a class="button green" href="https://baserow.io/form/4El8xDD_oRZHjA1rgHtjjNeMZatQbpNFoqm7NyQ0xSA" target="_blank" rel="noopener noreferrer">Öppna incheckning</a>
+          <a id="checkinLink" class="button green"
+             href="https://baserow.io/form/4El8xDD_oRZHjA1rgHtjjNeMZatQbpNFoqm7NyQ0xSA"
+             target="_blank" rel="noopener noreferrer">Öppna incheckning</a>
         </div>
 
         <div class="card">
           <div>
             <h3>📤 Registrera utcheckning</h3>
-            <p>Registrera material som placeras på ett fordon eller lämnar stationslagret.</p>
+            <p id="checkoutText">Registrera material som placeras på ett fordon eller lämnar stationslagret.</p>
           </div>
-          <a class="button" href="https://baserow.io/form/FhL3IbTcRr7KB3PP8epB1XoPJdFwht93mehDYiFbOlU" target="_blank" rel="noopener noreferrer">Öppna utcheckning</a>
+          <a id="checkoutLink" class="button"
+             href="https://baserow.io/form/FhL3IbTcRr7KB3PP8epB1XoPJdFwht93mehDYiFbOlU"
+             target="_blank" rel="noopener noreferrer">Öppna utcheckning</a>
         </div>
       </div>
     </section>
@@ -66,7 +109,9 @@
             <h3>🏢 Lageröversikt stationer</h3>
             <p>Visa material och lagerstatus för stationerna.</p>
           </div>
-          <a class="button" href="https://baserow.io/public/grid/qHxAZjCM3xAF9hQJEvXR8WitVPd_eHWMODbFs4xHRiA" target="_blank" rel="noopener noreferrer">Visa stationer</a>
+          <a class="button"
+             href="https://baserow.io/public/grid/qHxAZjCM3xAF9hQJEvXR8WitVPd_eHWMODbFs4xHRiA"
+             target="_blank" rel="noopener noreferrer">Visa stationer</a>
         </div>
 
         <div class="card">
@@ -74,7 +119,9 @@
             <h3>🚒 Lageröversikt fordon</h3>
             <p>Visa material och lagerstatus för fordonen.</p>
           </div>
-          <a class="button" href="https://baserow.io/public/grid/fPzJHcHWF4hSP9EruphziqgMU-qUfpo_v5PQBOwdAxM" target="_blank" rel="noopener noreferrer">Visa fordon</a>
+          <a class="button"
+             href="https://baserow.io/public/grid/fPzJHcHWF4hSP9EruphziqgMU-qUfpo_v5PQBOwdAxM"
+             target="_blank" rel="noopener noreferrer">Visa fordon</a>
         </div>
       </div>
     </section>
@@ -87,7 +134,9 @@
             <h3>🧺 Pågående tvättreturer</h3>
             <p>Följ material som har skickats till tvätt och väntar på att tas emot.</p>
           </div>
-          <a class="button" href="https://baserow.io/public/grid/AdmF2DpAHhGkqmGC2JxWP2CM1J_t5P24nGfMsHXyeMo" target="_blank" rel="noopener noreferrer">Visa pågående returer</a>
+          <a class="button"
+             href="https://baserow.io/public/grid/AdmF2DpAHhGkqmGC2JxWP2CM1J_t5P24nGfMsHXyeMo"
+             target="_blank" rel="noopener noreferrer">Visa pågående returer</a>
         </div>
 
         <div class="card">
@@ -95,12 +144,45 @@
             <h3>⚠️ Avvikelser</h3>
             <p>Visa tvättreturer som har registrerade avvikelser eller behöver kontrolleras.</p>
           </div>
-          <a class="button orange" href="https://baserow.io/public/grid/cqwL7M9m66JAN2mhfWDM7RezTAPNCCLfQX5xw-fFE9o" target="_blank" rel="noopener noreferrer">Visa avvikelser</a>
+          <a class="button orange"
+             href="https://baserow.io/public/grid/cqwL7M9m66JAN2mhfWDM7RezTAPNCCLfQX5xw-fFE9o"
+             target="_blank" rel="noopener noreferrer">Visa avvikelser</a>
         </div>
       </div>
     </section>
 
     <div class="footer">Rökskydd – intern materialhantering</div>
   </main>
+
+  <script>
+    const checkinBase =
+      "https://baserow.io/form/4El8xDD_oRZHjA1rgHtjjNeMZatQbpNFoqm7NyQ0xSA";
+    const checkoutBase =
+      "https://baserow.io/form/FhL3IbTcRr7KB3PP8epB1XoPJdFwht93mehDYiFbOlU";
+
+    const params = new URLSearchParams(window.location.search);
+    const rawMaterial = (params.get("material") || "").trim().toUpperCase();
+
+    // Accepterar exempelvis SKRTJ-00003.
+    const validMaterial = /^SKRTJ-\d{5}$/.test(rawMaterial);
+
+    if (rawMaterial && validMaterial) {
+      document.getElementById("materialBanner").classList.add("active");
+      document.getElementById("materialId").textContent = rawMaterial;
+
+      const encoded = encodeURIComponent(rawMaterial);
+      document.getElementById("checkinLink").href =
+        checkinBase + "?prefill_Material=" + encoded;
+      document.getElementById("checkoutLink").href =
+        checkoutBase + "?prefill_Material=" + encoded;
+
+      document.getElementById("checkinText").textContent =
+        "Checka in " + rawMaterial + " på en station.";
+      document.getElementById("checkoutText").textContent =
+        "Checka ut " + rawMaterial + " till ett fordon.";
+    } else if (rawMaterial) {
+      document.getElementById("materialError").classList.add("active");
+    }
+  </script>
 </body>
 </html>
