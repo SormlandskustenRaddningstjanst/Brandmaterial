@@ -86,7 +86,7 @@
 
       <div id="checkinPanel" class="panel">
         <h3>Välj station</h3>
-        <p class="muted">Ingen ändring sparas ännu. Detta är testläge.</p>
+        <p class="muted">Vald station sparas i Baserow efter bekräftelse.</p>
         <div id="stationsList"></div>
       </div>
 
@@ -264,13 +264,60 @@ el("checkoutBtn").addEventListener("click", async () => {
   }
 });
 
-function selectStation(row) {
+async function selectStation(row) {
+  const stationName = row["Station"] || row["Station-ID"] || "vald station";
+
+  if (!confirm("Checka in " + material + " på " + stationName + "?")) {
+    return;
+  }
+
+  el("selectionMessage").className = "message info active";
   el("selectionMessage").innerHTML =
-    "<strong>Testläge – inget har sparats.</strong><br>" +
-    escapeHtml(material) + " skulle checkas in på <strong>" +
-    escapeHtml(row["Station"] || row["Station-ID"]) + "</strong>." +
-    "<br>Baserow station-ID: " + Number(row.id);
-  el("selectionMessage").classList.add("active");
+    "<strong>Sparar…</strong><br>Checkar in " +
+    escapeHtml(material) + " på " + escapeHtml(stationName) + ".";
+
+  el("checkinBtn").disabled = true;
+  el("checkoutBtn").disabled = true;
+
+  try {
+    const response = await fetch(API + "/checkin", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        materialId: material,
+        stationId: Number(row.id)
+      })
+    });
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error("API:t gav ett ogiltigt svar.");
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || "Incheckningen misslyckades.");
+    }
+
+    el("selectionMessage").className = "message info active";
+    el("selectionMessage").innerHTML =
+      "<strong>✓ Incheckningen är sparad.</strong><br>" +
+      escapeHtml(data.message || (material + " är incheckat på " + stationName + "."));
+
+    el("currentLocation").textContent = stationName;
+    el("lagerType").textContent = "Stationslager";
+    el("checkinPanel").classList.remove("active");
+  } catch (err) {
+    el("selectionMessage").className = "message error active";
+    el("selectionMessage").innerHTML =
+      "<strong>Incheckningen misslyckades.</strong><br>" + escapeHtml(err.message);
+  } finally {
+    el("checkinBtn").disabled = false;
+    el("checkoutBtn").disabled = false;
+  }
 }
 
 function selectVehicle(row, rakel, reg) {
