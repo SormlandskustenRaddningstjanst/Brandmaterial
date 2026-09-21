@@ -72,6 +72,87 @@ function showError(message) {
   el("errorMessage").classList.add("active");
 }
 
+
+let currentOrderType = "";
+
+function openOrderPanel(type) {
+  currentOrderType = type;
+  el("orderTitle").textContent = type === "Lager" ? "📦 Beställning lager" : "🎯 Beställning övning";
+  el("orderMessage").className = "message";
+  el("orderMessage").textContent = "";
+
+  const selected = getSelectedStationIds();
+  const stations = (overviewData?.stations || []).filter(s => selected.includes(Number(s.id)));
+  el("orderStation").innerHTML = stations.map(s =>
+    '<option value="' + Number(s.id) + '">' + escapeHtml(s.name) + '</option>'
+  ).join("");
+
+  const materials = [...new Set((overviewData?.material || [])
+    .map(m => String(m.material || "").trim())
+    .filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b, "sv"));
+
+  el("orderMaterial").innerHTML = materials.map(name =>
+    '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>'
+  ).join("");
+
+  el("orderQuantity").value = "1";
+  el("orderComment").value = "";
+  el("orderPanel").classList.add("active");
+  el("orderPanel").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+el("orderStockBtn")?.addEventListener("click", () => openOrderPanel("Lager"));
+el("orderExerciseBtn")?.addEventListener("click", () => openOrderPanel("Övning"));
+el("cancelOrderBtn")?.addEventListener("click", () => el("orderPanel").classList.remove("active"));
+
+el("submitOrderBtn")?.addEventListener("click", async () => {
+  const stationId = Number(el("orderStation").value);
+  const materialName = el("orderMaterial").value;
+  const quantity = Number(el("orderQuantity").value);
+  const comment = el("orderComment").value.trim();
+
+  if (!currentOrderType || !stationId || !materialName || !Number.isInteger(quantity) || quantity < 1) {
+    el("orderMessage").className = "message error active";
+    el("orderMessage").textContent = "Kontrollera station, material och antal.";
+    return;
+  }
+
+  el("submitOrderBtn").disabled = true;
+  el("orderMessage").className = "message info active";
+  el("orderMessage").textContent = "Skickar beställningen…";
+
+  try {
+    const response = await fetch(API + "/orders", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        type: currentOrderType,
+        material: materialName,
+        quantity,
+        stationId,
+        comment
+      })
+    });
+    let data;
+    try { data = await response.json(); } catch { throw new Error("API:t gav ett ogiltigt svar."); }
+    if (!response.ok) throw new Error(data.error || data.message || "Beställningen kunde inte sparas.");
+
+    el("orderMessage").className = "message info active";
+    el("orderMessage").innerHTML =
+      "<strong>✓ Beställningen är skickad till Nyköping.</strong><br>" +
+      escapeHtml(data.orderId || "") + " · " + escapeHtml(currentOrderType) + " · " +
+      escapeHtml(quantity) + " st " + escapeHtml(materialName);
+    el("orderQuantity").value = "1";
+    el("orderComment").value = "";
+  } catch (err) {
+    el("orderMessage").className = "message error active";
+    el("orderMessage").innerHTML = "<strong>Beställningen misslyckades.</strong><br>" + escapeHtml(err.message);
+  } finally {
+    el("submitOrderBtn").disabled = false;
+  }
+});
+
 el("checkinBtn").addEventListener("click", async () => {
   el("checkoutPanel").classList.remove("active");
   el("transportPanel").classList.remove("active");
