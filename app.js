@@ -20,7 +20,8 @@ async function apiGet(path) {
   catch { throw new Error("API:t gav ett ogiltigt svar."); }
 
   if (!response.ok) {
-    throw new Error(data.error || data.message || "API-fel");
+    const extra = data.baserowBody ? "\nBaserow: " + data.baserowBody : "";
+    throw new Error((data.error || data.message || "API-fel") + extra);
   }
   return data;
 }
