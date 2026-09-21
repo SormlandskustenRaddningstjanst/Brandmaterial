@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="style.css?v=20260921-levels">
+  <link rel="stylesheet" href="style.css?v=20260921-materialplan">
 
 </head>
 <body>
@@ -216,7 +216,18 @@
   <div class="footer">Sörmlandskustens räddningstjänst · Brandmaterial</div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260921-visa-fix"></script>
+<script src="app.js?v=20260921-materialplan"></script>
+
+
+<div id="materialPlanModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-card material-plan-card">
+    <div class="modal-head">
+      <div><h2 id="materialPlanTitle">Materialplan</h2><p id="materialPlanSubtitle"></p></div>
+      <button id="closeMaterialPlanBtn" type="button" class="secondary">STÄNG</button>
+    </div>
+    <div id="materialPlanList"></div>
+  </div>
+</div>
 
 </body>
 </html>
