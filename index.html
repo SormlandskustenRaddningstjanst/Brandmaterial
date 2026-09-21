@@ -735,8 +735,9 @@ async function createMaterial() {
     const materialUrl =
       location.origin + location.pathname + "?material=" + encodeURIComponent(data.materialId);
     el("createdQrId").textContent = data.materialId;
+    window.lastCreatedMaterialName = materialName;
     el("createdQrImage").src =
-      "https://quickchart.io/qr?size=300&text=" + encodeURIComponent(materialUrl);
+      "https://quickchart.io/qr?size=300&ecLevel=H&margin=2&text=" + encodeURIComponent(materialUrl);
     el("createdQr").style.display = "block";
 
     el("newMaterialName").value = "";
@@ -757,10 +758,21 @@ async function createMaterial() {
 }
 
 
-function printMaterialLabel(materialId, qrSrc) {
-  if (!materialId || !qrSrc) return;
+function printMaterialLabel(materialId, materialName) {
+  if (!materialId) return;
 
-  const w = window.open("", "_blank", "width=600,height=700");
+  const materialUrl =
+    location.origin + location.pathname + "?material=" + encodeURIComponent(materialId);
+
+  // Hög felkorrigering för att tåla det vita textfältet i QR-kodens centrum.
+  const qrSrc =
+    "https://quickchart.io/qr?size=500&ecLevel=H&margin=2&text=" +
+    encodeURIComponent(materialUrl);
+
+  const safeId = escapeHtml(materialId);
+  const safeName = escapeHtml(materialName || "");
+
+  const w = window.open("", "_blank", "width=520,height=620");
   if (!w) {
     alert("Webbläsaren blockerade utskriftsfönstret. Tillåt popup-fönster och försök igen.");
     return;
@@ -770,30 +782,59 @@ function printMaterialLabel(materialId, qrSrc) {
 <html lang="sv">
 <head>
 <meta charset="UTF-8">
-<title>${escapeHtml(materialId)} – etikett</title>
+<title>${safeId} – QR-etikett</title>
 <style>
-  @page { size: 70mm 40mm; margin: 3mm; }
-  html,body { margin:0; padding:0; font-family:Arial,Helvetica,sans-serif; }
+  @page { size: 40mm 40mm; margin: 2mm; }
+  html,body { margin:0; padding:0; font-family:Arial,Helvetica,sans-serif; background:#fff; }
   .label {
-    width:64mm; height:34mm; box-sizing:border-box;
-    display:flex; align-items:center; gap:4mm;
-    border:0.3mm solid #bbb; padding:2mm;
+    width:36mm; height:36mm;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
   }
-  img { width:28mm; height:28mm; object-fit:contain; }
-  .id { font-size:13pt; font-weight:700; line-height:1.15; word-break:break-word; }
-  .sub { margin-top:2mm; font-size:8pt; }
+  .qr {
+    width:34mm; height:34mm;
+    position:relative;
+  }
+  .qr img {
+    width:34mm; height:34mm;
+    display:block;
+    image-rendering:pixelated;
+  }
+  .qrtext {
+    position:absolute;
+    left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    background:#fff;
+    color:#000;
+    text-align:center;
+    padding:0.8mm 1mm;
+    line-height:1.05;
+    white-space:nowrap;
+    font-weight:700;
+    max-width:19mm;
+  }
+  .id { font-size:6.5pt; }
+  .name {
+    font-size:6pt;
+    margin-top:.5mm;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:17mm;
+  }
 </style>
 </head>
 <body>
   <div class="label">
-    <img src="${qrSrc}" alt="QR-kod">
-    <div>
-      <div class="id">${escapeHtml(materialId)}</div>
-      <div class="sub">Rökskydd<br>Brandmaterial</div>
+    <div class="qr">
+      <img src="${qrSrc}" alt="QR-kod">
+      <div class="qrtext">
+        <div class="id">${safeId}</div>
+        <div class="name">${safeName}</div>
+      </div>
     </div>
   </div>
 <script>
-window.onload = () => setTimeout(() => window.print(), 300);
+window.onload = () => setTimeout(() => window.print(), 500);
 <\/script>
 </body>
 </html>`);
@@ -803,17 +844,15 @@ window.onload = () => setTimeout(() => window.print(), 300);
 function printCreatedQr() {
   printMaterialLabel(
     el("createdQrId").textContent.trim(),
-    el("createdQrImage").src
+    window.lastCreatedMaterialName || ""
   );
 }
 
 function printExistingQr() {
-  const materialId = el("materialId").textContent.trim() || material;
-  const materialUrl =
-    location.origin + location.pathname + "?material=" + encodeURIComponent(materialId);
-  const qrSrc =
-    "https://quickchart.io/qr?size=300&text=" + encodeURIComponent(materialUrl);
-  printMaterialLabel(materialId, qrSrc);
+  printMaterialLabel(
+    el("materialId").textContent.trim() || material,
+    el("materialName").textContent.trim()
+  );
 }
 
 el("printQrBtn")?.addEventListener("click", printCreatedQr);
