@@ -73,6 +73,73 @@ function showError(message) {
 }
 
 
+
+async function loadOrders() {
+  const stockBox = el("stockOrders");
+  const exerciseBox = el("exerciseOrders");
+  if (!stockBox || !exerciseBox) return;
+
+  try {
+    const data = await apiGet("/orders");
+    const active = (data.orders || []).filter(o => !["Klar","Avbruten"].includes(o.status));
+    el("countOrders").textContent = active.length;
+    renderOrderList(stockBox, active.filter(o => o.type === "Lager"));
+    renderOrderList(exerciseBox, active.filter(o => o.type === "Övning"));
+  } catch (err) {
+    const msg = '<div class="message error active">' + escapeHtml(err.message) + '</div>';
+    stockBox.innerHTML = msg;
+    exerciseBox.innerHTML = msg;
+  }
+}
+
+function renderOrderList(box, orders) {
+  box.innerHTML = "";
+  if (!orders.length) {
+    box.innerHTML = '<div class="muted empty">Inga aktiva beställningar.</div>';
+    return;
+  }
+
+  orders.forEach(order => {
+    const row = document.createElement("div");
+    row.className = "order-row";
+    row.innerHTML =
+      "<strong>" + escapeHtml(order.orderId || "Beställning") + " · " +
+      escapeHtml(order.quantity) + " st " + escapeHtml(order.material) + "</strong>" +
+      "<div class='order-meta'>Från " + escapeHtml(order.station || "okänd station") +
+      " · Status: <strong>" + escapeHtml(order.status || "Beställd") + "</strong></div>" +
+      (order.comment ? "<div class='order-meta'>" + escapeHtml(order.comment) + "</div>" : "") +
+      "<div class='order-status-actions'></div>";
+
+    const actions = row.querySelector(".order-status-actions");
+    ["Beställd","Mottagen","Klar","Avbruten"].forEach(status => {
+      if (status === order.status) return;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = status === "Klar" ? "green" : (status === "Avbruten" ? "secondary" : "");
+      b.textContent = status;
+      b.addEventListener("click", async () => {
+        b.disabled = true;
+        try {
+          const response = await fetch(API + "/orders/status", {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({rowId:Number(order.id), status})
+          });
+          let data;
+          try { data = await response.json(); } catch { throw new Error("API:t gav ett ogiltigt svar."); }
+          if (!response.ok) throw new Error(data.error || data.message || "Status kunde inte ändras.");
+          await loadOrders();
+        } catch(err) {
+          alert("Statusändringen misslyckades: " + err.message);
+          b.disabled = false;
+        }
+      });
+      actions.appendChild(b);
+    });
+    box.appendChild(row);
+  });
+}
+
 let currentOrderType = "";
 
 function openOrderPanel(type) {
@@ -900,3 +967,5 @@ el("allStations")?.addEventListener("change", () => {
     else input.checked = false;
   });
 });
+
+if (el("stockOrders")) loadOrders();
