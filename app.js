@@ -81,7 +81,7 @@ function openOrderPanel(type) {
   el("orderMessage").className = "message";
   el("orderMessage").textContent = "";
 
-  const selected = getSelectedStationIds();
+  const selected = selectedStationIds();
   const stations = (overviewData?.stations || []).filter(s => selected.includes(Number(s.id)));
   el("orderStation").innerHTML = stations.map(s =>
     '<option value="' + Number(s.id) + '">' + escapeHtml(s.name) + '</option>'
