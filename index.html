@@ -23,7 +23,7 @@ button:hover,.button:hover{background:var(--primary-dark)}button:disabled{opacit
 .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.overview-card{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding:13px 0}.overview-card:first-child{border-top:0}.mini-button{width:auto;padding:9px 13px;font-size:.88rem}
 .check-row{display:flex;align-items:center;gap:11px;padding:12px 4px;border-bottom:1px solid var(--border);font-weight:600}.check-row input{width:20px;height:20px}.settings-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.secondary{background:#667085}
 .material-row{display:flex;flex-direction:column;gap:3px;padding:11px 0;border-top:1px solid var(--border)}.material-row:first-child{border-top:0}.empty{padding:12px 0}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}.field label{font-weight:700}.field input,.field select,.field textarea{width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);font:inherit}.field textarea{min-height:90px;resize:vertical}.primary-actions{display:flex;gap:10px;align-items:center;margin-bottom:14px}.primary-actions button{width:auto}.success-box{background:#ecf8f1;border:1px solid #a9d6bb;color:#1d6043}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}.field label{font-weight:700}.field input,.field select,.field textarea{width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);font:inherit}.field textarea{min-height:90px;resize:vertical}.primary-actions{display:flex;gap:10px;align-items:center;margin-bottom:14px}.primary-actions button{width:auto}.success-box{background:#ecf8f1;border:1px solid #a9d6bb;color:#1d6043}.created-qr{text-align:center;margin-top:16px;padding:16px;background:#fff;border:1px solid var(--border);border-radius:12px}.created-qr img{width:220px;max-width:100%;height:auto;display:block;margin:10px auto}.created-qr strong{font-size:1.2rem}.print-button{margin-top:12px;width:auto}.print-label{display:none}
 @media(max-width:650px){.form-grid{grid-template-columns:1fr}.primary-actions{display:block}.primary-actions button{width:100%;margin-bottom:10px}.home-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr 1fr}.topbar{align-items:flex-start}.actions{grid-template-columns:1fr}header h1{font-size:1.35rem}}
 </style>
 </head>
@@ -137,6 +137,12 @@ button:hover,.button:hover{background:var(--primary-dark)}button:disabled{opacit
           <button id="cancelAddMaterialBtn" class="secondary" type="button">Avbryt</button>
         </div>
         <div id="createMaterialMessage" class="message"></div>
+        <div id="createdQr" class="created-qr" style="display:none">
+          <strong id="createdQrId"></strong>
+          <img id="createdQrImage" alt="QR-kod för material">
+          <div class="muted small">Skanna QR-koden för att öppna materialet.</div>
+          <button id="printQrBtn" class="print-button" type="button">🖨 Skriv ut etikett</button>
+        </div>
       </div>
 
       <div id="detailPanel" class="card panel">
@@ -638,6 +644,7 @@ function populateAddMaterialForm() {
 function openAddMaterial() {
   populateAddMaterialForm();
   el("createMaterialMessage").className = "message";
+  el("createdQr").style.display = "none";
   el("addMaterialPanel").classList.add("active");
   el("addMaterialPanel").scrollIntoView({behavior:"smooth", block:"start"});
 }
@@ -698,6 +705,13 @@ async function createMaterial() {
       "<strong>✓ " + escapeHtml(data.materialId) + " har skapats.</strong><br>" +
       escapeHtml(data.message || "");
 
+    const materialUrl =
+      location.origin + location.pathname + "?material=" + encodeURIComponent(data.materialId);
+    el("createdQrId").textContent = data.materialId;
+    el("createdQrImage").src =
+      "https://quickchart.io/qr?size=300&text=" + encodeURIComponent(materialUrl);
+    el("createdQr").style.display = "block";
+
     el("newMaterialName").value = "";
     el("newMaterialCategory").value = "";
     el("newMaterialComment").value = "";
@@ -714,6 +728,54 @@ async function createMaterial() {
     el("createMaterialBtn").disabled = false;
   }
 }
+
+
+function printCreatedQr() {
+  const materialId = el("createdQrId").textContent.trim();
+  const qrSrc = el("createdQrImage").src;
+  if (!materialId || !qrSrc) return;
+
+  const w = window.open("", "_blank", "width=600,height=700");
+  if (!w) {
+    alert("Webbläsaren blockerade utskriftsfönstret. Tillåt popup-fönster och försök igen.");
+    return;
+  }
+
+  w.document.write(`<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtml(materialId)} – etikett</title>
+<style>
+  @page { size: 70mm 40mm; margin: 3mm; }
+  html,body { margin:0; padding:0; font-family:Arial,Helvetica,sans-serif; }
+  .label {
+    width:64mm; height:34mm; box-sizing:border-box;
+    display:flex; align-items:center; gap:4mm;
+    border:0.3mm solid #bbb; padding:2mm;
+  }
+  img { width:28mm; height:28mm; object-fit:contain; }
+  .id { font-size:13pt; font-weight:700; line-height:1.15; word-break:break-word; }
+  .sub { margin-top:2mm; font-size:8pt; }
+</style>
+</head>
+<body>
+  <div class="label">
+    <img src="${qrSrc}" alt="QR-kod">
+    <div>
+      <div class="id">${escapeHtml(materialId)}</div>
+      <div class="sub">Rökskydd<br>Brandmaterial</div>
+    </div>
+  </div>
+<script>
+window.onload = () => setTimeout(() => window.print(), 300);
+<\/script>
+</body>
+</html>`);
+  w.document.close();
+}
+
+el("printQrBtn")?.addEventListener("click", printCreatedQr);
 
 el("addMaterialBtn")?.addEventListener("click", openAddMaterial);
 el("closeAddMaterialBtn")?.addEventListener("click", closeAddMaterial);
