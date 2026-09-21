@@ -771,6 +771,102 @@ function updateSelectedLabel() {
   el("selectedStationsLabel").textContent = names.join(", ") || "Ingen station vald";
 }
 
+
+function uniqueMaterialTypes() {
+  const map = new Map();
+  for (const m of (overviewData?.material || [])) {
+    const name = String(m.material || "").trim();
+    if (!name) continue;
+    const key = name.toLocaleLowerCase("sv-SE");
+    if (!map.has(key)) map.set(key, {material:name, category:m.category || ""});
+  }
+  return [...map.values()].sort((a,b) => a.material.localeCompare(b.material, "sv"));
+}
+
+function openStationMaterialPlan(station) {
+  const modal = el("materialPlanModal"), list = el("materialPlanList");
+  el("materialPlanTitle").textContent = station.name + " – materialplan";
+  el("materialPlanSubtitle").textContent = "Alla unika materialtyper från hela Brandmaterial-listan.";
+  const types = uniqueMaterialTypes();
+  const levels = overviewData.stockLevels || [];
+  const actual = overviewData.material || [];
+  list.innerHTML = types.map((t,i) => {
+    const level = levels.find(x => Number(x.stationId) === Number(station.id) &&
+      String(x.material||"").trim().toLocaleLowerCase("sv-SE") === t.material.toLocaleLowerCase("sv-SE"));
+    const count = actual.filter(m => Number(m.stationId) === Number(station.id) &&
+      String(m.material||"").trim().toLocaleLowerCase("sv-SE") === t.material.toLocaleLowerCase("sv-SE") &&
+      m.transportStatus !== "Under transport").length;
+    const active = !!level;
+    const redMax = level?.redBelow != null ? Math.max(0, Number(level.redBelow)-1) : 0;
+    const yellowMax = level?.greenFrom != null ? Math.max(redMax+1, Number(level.greenFrom)-1) : 1;
+    const greenMax = level?.max != null ? Number(level.max) : 2;
+    return "<div class='plan-row' data-material='"+escapeHtml(t.material)+"'>" +
+      "<div class='plan-name'><strong>"+escapeHtml(t.material)+"</strong><span>"+escapeHtml(t.category||"")+" · Finns nu: "+count+"</span></div>" +
+      "<label><input class='plan-stocked' type='checkbox' "+(active?"checked":"")+"> Ska finnas</label>" +
+      "<label>🔴 t.o.m.<input class='plan-red' type='number' min='0' value='"+redMax+"'></label>" +
+      "<label>🟡 t.o.m.<input class='plan-yellow' type='number' min='0' value='"+yellowMax+"'></label>" +
+      "<label>🟢 MAX<input class='plan-green' type='number' min='0' value='"+greenMax+"'></label>" +
+      "<button class='plan-save' type='button'>SPARA</button></div>";
+  }).join("") || "<p>Inga materialtyper finns i Brandmaterial ännu.</p>";
+
+  list.querySelectorAll(".plan-row").forEach(row => {
+    const checkbox = row.querySelector(".plan-stocked");
+    const sync = () => row.querySelectorAll("input[type=number]").forEach(x => x.disabled = !checkbox.checked);
+    checkbox.addEventListener("change", sync); sync();
+    row.querySelector(".plan-save").addEventListener("click", async () => {
+      const body = {
+        stationId:station.id, material:row.dataset.material, stocked:checkbox.checked,
+        redMax:Number(row.querySelector(".plan-red").value),
+        yellowMax:Number(row.querySelector(".plan-yellow").value),
+        greenMax:Number(row.querySelector(".plan-green").value)
+      };
+      try {
+        await apiPost("/stock-level/upsert", body);
+        overviewData = await apiGet("/overview");
+        openStationMaterialPlan(station);
+        renderHome();
+      } catch(e) { alert(e.message || e); }
+    });
+  });
+  modal.classList.remove("hidden");
+}
+
+function openVehicleMaterialPlan(vehicle, label) {
+  const modal = el("materialPlanModal"), list = el("materialPlanList");
+  el("materialPlanTitle").textContent = (label || "Fordon") + " – materialplan";
+  el("materialPlanSubtitle").textContent = "Grön nivå är exakt antal. Alla andra antal visas rött.";
+  const types = uniqueMaterialTypes();
+  const reqs = overviewData.vehicleRequirements || [];
+  const actual = overviewData.material || [];
+  list.innerHTML = types.map(t => {
+    const req = reqs.find(x => Number(x.vehicleId) === Number(vehicle.id) &&
+      String(x.material||"").trim().toLocaleLowerCase("sv-SE") === t.material.toLocaleLowerCase("sv-SE"));
+    const count = actual.filter(m => Number(m.vehicleId) === Number(vehicle.id) &&
+      String(m.material||"").trim().toLocaleLowerCase("sv-SE") === t.material.toLocaleLowerCase("sv-SE")).length;
+    return "<div class='plan-row vehicle-plan-row' data-material='"+escapeHtml(t.material)+"'>" +
+      "<div class='plan-name'><strong>"+escapeHtml(t.material)+"</strong><span>"+escapeHtml(t.category||"")+" · Finns nu: "+count+"</span></div>" +
+      "<label><input class='plan-stocked' type='checkbox' "+(req?"checked":"")+"> Ska finnas</label>" +
+      "<label>🟢 Exakt antal<input class='plan-required' type='number' min='0' value='"+escapeHtml(req?.required ?? 0)+"'></label>" +
+      "<button class='plan-save' type='button'>SPARA</button></div>";
+  }).join("");
+  list.querySelectorAll(".plan-row").forEach(row => {
+    const checkbox=row.querySelector(".plan-stocked"), input=row.querySelector(".plan-required");
+    const sync=()=>input.disabled=!checkbox.checked; checkbox.addEventListener("change",sync); sync();
+    row.querySelector(".plan-save").addEventListener("click", async () => {
+      try {
+        await apiPost("/vehicle-requirement/upsert", {
+          vehicleId:vehicle.id, material:row.dataset.material, stocked:checkbox.checked, required:Number(input.value)
+        });
+        overviewData=await apiGet("/overview");
+        openVehicleMaterialPlan(vehicle,label); renderHome();
+      } catch(e){ alert(e.message||e); }
+    });
+  });
+  modal.classList.remove("hidden");
+}
+
+el("closeMaterialPlanBtn")?.addEventListener("click",()=>el("materialPlanModal").classList.add("hidden"));
+
 function renderHome() {
   el("homeLoading").style.display = "none";
   el("homeContent").style.display = "block";
@@ -806,10 +902,8 @@ function renderHome() {
     card.innerHTML =
       "<div><strong>" + escapeHtml(station.name) + "</strong><div class='muted small'>" +
       stock.length + " material i stationslager</div>" + levelHtml + "</div>" +
-      "<button class='mini-button station-show-material' type='button'>Visa</button>";
-    card.querySelector(".station-show-material").addEventListener("click", () =>
-      showMaterialList(station.name, stock)
-    );
+      "<button class='mini-button station-show-material' type='button'>MATERIALPLAN</button>";
+    card.querySelector(".station-show-material").addEventListener("click", () => openStationMaterialPlan(station));
     card.querySelectorAll(".station-level-edit").forEach(btn => {
       btn.addEventListener("click", event => {
         event.stopPropagation();
@@ -839,10 +933,8 @@ function renderHome() {
       "<div><strong><i class='status-dot " + overallStatus + "'></i>" + escapeHtml(label || "Fordon") +
       "</strong><div class='muted small'>" + escapeHtml(type) + (type ? " • " : "") +
       stock.length + " material</div>" + reqHtml + "</div>" +
-      "<button class='mini-button vehicle-show-material' type='button'>Visa</button>";
-    card.querySelector(".vehicle-show-material").addEventListener("click", () =>
-      showMaterialList(label || "Fordon", stock)
-    );
+      "<button class='mini-button vehicle-show-material' type='button'>MATERIALPLAN</button>";
+    card.querySelector(".vehicle-show-material").addEventListener("click", () => openVehicleMaterialPlan(vehicle, label));
     card.querySelectorAll(".vehicle-level-edit").forEach(btn => {
       btn.addEventListener("click", event => {
         event.stopPropagation();
