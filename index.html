@@ -52,6 +52,9 @@ button:hover,.button:hover{background:var(--primary-dark)}button:disabled{opacit
         <button id="checkinBtn" class="green">📥 CHECKA IN</button>
         <button id="checkoutBtn">📤 CHECKA UT</button>
       </div>
+      <div style="margin-top:12px">
+        <button id="printExistingQrBtn" class="secondary" type="button">🖨 Skriv ut QR-etikett</button>
+      </div>
 
       <div id="checkinPanel" class="panel">
         <h3>Välj station</h3>
@@ -730,9 +733,7 @@ async function createMaterial() {
 }
 
 
-function printCreatedQr() {
-  const materialId = el("createdQrId").textContent.trim();
-  const qrSrc = el("createdQrImage").src;
+function printMaterialLabel(materialId, qrSrc) {
   if (!materialId || !qrSrc) return;
 
   const w = window.open("", "_blank", "width=600,height=700");
@@ -775,7 +776,24 @@ window.onload = () => setTimeout(() => window.print(), 300);
   w.document.close();
 }
 
+function printCreatedQr() {
+  printMaterialLabel(
+    el("createdQrId").textContent.trim(),
+    el("createdQrImage").src
+  );
+}
+
+function printExistingQr() {
+  const materialId = el("materialId").textContent.trim() || material;
+  const materialUrl =
+    location.origin + location.pathname + "?material=" + encodeURIComponent(materialId);
+  const qrSrc =
+    "https://quickchart.io/qr?size=300&text=" + encodeURIComponent(materialUrl);
+  printMaterialLabel(materialId, qrSrc);
+}
+
 el("printQrBtn")?.addEventListener("click", printCreatedQr);
+el("printExistingQrBtn")?.addEventListener("click", printExistingQr);
 
 el("addMaterialBtn")?.addEventListener("click", openAddMaterial);
 el("closeAddMaterialBtn")?.addEventListener("click", closeAddMaterial);
