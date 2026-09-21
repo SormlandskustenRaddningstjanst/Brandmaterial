@@ -23,7 +23,8 @@ button:hover,.button:hover{background:var(--primary-dark)}button:disabled{opacit
 .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.overview-card{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding:13px 0}.overview-card:first-child{border-top:0}.mini-button{width:auto;padding:9px 13px;font-size:.88rem}
 .check-row{display:flex;align-items:center;gap:11px;padding:12px 4px;border-bottom:1px solid var(--border);font-weight:600}.check-row input{width:20px;height:20px}.settings-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.secondary{background:#667085}
 .material-row{display:flex;flex-direction:column;gap:3px;padding:11px 0;border-top:1px solid var(--border)}.material-row:first-child{border-top:0}.empty{padding:12px 0}
-@media(max-width:650px){.home-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr 1fr}.topbar{align-items:flex-start}.actions{grid-template-columns:1fr}header h1{font-size:1.35rem}}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}.field label{font-weight:700}.field input,.field select,.field textarea{width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);font:inherit}.field textarea{min-height:90px;resize:vertical}.primary-actions{display:flex;gap:10px;align-items:center;margin-bottom:14px}.primary-actions button{width:auto}.success-box{background:#ecf8f1;border:1px solid #a9d6bb;color:#1d6043}
+@media(max-width:650px){.form-grid{grid-template-columns:1fr}.primary-actions{display:block}.primary-actions button{width:100%;margin-bottom:10px}.home-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr 1fr}.topbar{align-items:flex-start}.actions{grid-template-columns:1fr}header h1{font-size:1.35rem}}
 </style>
 </head>
 <body>
@@ -87,6 +88,10 @@ button:hover,.button:hover{background:var(--primary-dark)}button:disabled{opacit
 
       <div class="selected-box"><strong>Mina stationer:</strong> <span id="selectedStationsLabel">–</span></div>
 
+      <div class="primary-actions">
+        <button id="addMaterialBtn" class="green" type="button">➕ Lägg till brandmaterial</button>
+      </div>
+
       <div class="stats">
         <div class="stat"><strong id="countStations">0</strong><span>Stationer</span></div>
         <div class="stat"><strong id="countStationStock">0</strong><span>Stationslager</span></div>
@@ -96,6 +101,42 @@ button:hover,.button:hover{background:var(--primary-dark)}button:disabled{opacit
       <div class="home-grid">
         <div class="card"><h3>🏢 Stationslager</h3><div id="stationOverview"></div></div>
         <div class="card"><h3>🚒 Fordon</h3><div id="vehicleOverview"></div></div>
+      </div>
+
+      <div id="addMaterialPanel" class="card panel">
+        <div class="topbar">
+          <div>
+            <h3>➕ Lägg till brandmaterial</h3>
+            <div class="muted">Material-ID skapas automatiskt.</div>
+          </div>
+          <button id="closeAddMaterialBtn" class="mini-button secondary" type="button">Stäng</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="field full">
+            <label for="newMaterialName">Material *</label>
+            <input id="newMaterialName" type="text" placeholder="Exempel: Slang 42">
+          </div>
+          <div class="field">
+            <label for="newMaterialCategory">Kategori *</label>
+            <input id="newMaterialCategory" type="text" list="categorySuggestions" placeholder="Exempel: Slang">
+            <datalist id="categorySuggestions"></datalist>
+          </div>
+          <div class="field">
+            <label for="newMaterialStation">Station *</label>
+            <select id="newMaterialStation"></select>
+          </div>
+          <div class="field full">
+            <label for="newMaterialComment">Kommentar</label>
+            <textarea id="newMaterialComment" placeholder="Valfri kommentar"></textarea>
+          </div>
+        </div>
+
+        <div class="settings-actions">
+          <button id="createMaterialBtn" class="green" type="button">Skapa material</button>
+          <button id="cancelAddMaterialBtn" class="secondary" type="button">Avbryt</button>
+        </div>
+        <div id="createMaterialMessage" class="message"></div>
       </div>
 
       <div id="detailPanel" class="card panel">
@@ -562,6 +603,122 @@ function saveSettingsFromUi() {
   renderStationSettings();
   renderHome();
 }
+
+
+function populateAddMaterialForm() {
+  const stationSelect = el("newMaterialStation");
+  stationSelect.innerHTML = "";
+
+  const savedIds = selectedStationIds();
+  const orderedStations = [...overviewData.stations].sort((a, b) => {
+    const aSelected = savedIds.includes(Number(a.id)) ? 0 : 1;
+    const bSelected = savedIds.includes(Number(b.id)) ? 0 : 1;
+    return aSelected - bSelected || a.name.localeCompare(b.name, "sv");
+  });
+
+  orderedStations.forEach(station => {
+    const option = document.createElement("option");
+    option.value = station.id;
+    option.textContent = station.name;
+    stationSelect.appendChild(option);
+  });
+
+  const categories = [...new Set(
+    overviewData.material.map(item => item.category).filter(Boolean)
+  )].sort((a,b) => a.localeCompare(b, "sv"));
+
+  el("categorySuggestions").innerHTML = "";
+  categories.forEach(category => {
+    const option = document.createElement("option");
+    option.value = category;
+    el("categorySuggestions").appendChild(option);
+  });
+}
+
+function openAddMaterial() {
+  populateAddMaterialForm();
+  el("createMaterialMessage").className = "message";
+  el("addMaterialPanel").classList.add("active");
+  el("addMaterialPanel").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function closeAddMaterial() {
+  el("addMaterialPanel").classList.remove("active");
+}
+
+async function createMaterial() {
+  const materialName = el("newMaterialName").value.trim();
+  const category = el("newMaterialCategory").value.trim();
+  const stationId = Number(el("newMaterialStation").value);
+  const comment = el("newMaterialComment").value.trim();
+
+  if (!materialName) {
+    alert("Ange material.");
+    el("newMaterialName").focus();
+    return;
+  }
+  if (!category) {
+    alert("Ange kategori.");
+    el("newMaterialCategory").focus();
+    return;
+  }
+  if (!Number.isInteger(stationId) || stationId <= 0) {
+    alert("Välj station.");
+    return;
+  }
+
+  const station = overviewData.stations.find(s => Number(s.id) === stationId);
+  const stationName = station?.name || "vald station";
+
+  if (!confirm("Skapa nytt brandmaterial och placera det i " + stationName + "?")) {
+    return;
+  }
+
+  el("createMaterialBtn").disabled = true;
+  el("createMaterialMessage").className = "message info active";
+  el("createMaterialMessage").innerHTML = "<strong>Sparar…</strong><br>Skapar nytt brandmaterial.";
+
+  try {
+    const response = await fetch(API + "/material", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({material: materialName, category, comment, stationId})
+    });
+
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error("API:t gav ett ogiltigt svar."); }
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || "Materialet kunde inte skapas.");
+    }
+
+    el("createMaterialMessage").className = "message success-box active";
+    el("createMaterialMessage").innerHTML =
+      "<strong>✓ " + escapeHtml(data.materialId) + " har skapats.</strong><br>" +
+      escapeHtml(data.message || "");
+
+    el("newMaterialName").value = "";
+    el("newMaterialCategory").value = "";
+    el("newMaterialComment").value = "";
+
+    overviewData = await apiGet("/overview");
+    renderStationSettings();
+    renderHome();
+    populateAddMaterialForm();
+  } catch (err) {
+    el("createMaterialMessage").className = "message error active";
+    el("createMaterialMessage").innerHTML =
+      "<strong>Kunde inte skapa materialet.</strong><br>" + escapeHtml(err.message);
+  } finally {
+    el("createMaterialBtn").disabled = false;
+  }
+}
+
+el("addMaterialBtn")?.addEventListener("click", openAddMaterial);
+el("closeAddMaterialBtn")?.addEventListener("click", closeAddMaterial);
+el("cancelAddMaterialBtn")?.addEventListener("click", closeAddMaterial);
+el("createMaterialBtn")?.addEventListener("click", createMaterial);
 
 el("settingsBtn")?.addEventListener("click", openSettings);
 el("closeSettingsBtn")?.addEventListener("click", () => el("settingsPanel").classList.remove("active"));
