@@ -490,6 +490,45 @@ function renderHome() {
   if (!vehicles.length) {
     el("vehicleOverview").innerHTML = '<div class="muted empty">Inga fordon registrerade för valda stationer.</div>';
   }
+
+  // Material under transport visas separat. Det räknas inte som stationslager eller fordonsmaterial.
+  const transports = (overviewData.material || []).filter(m =>
+    m.transportStatus === "Under transport" || m.storageType === "Transport"
+  );
+  const visibleTransports = transports.filter(m =>
+    !m.transportDestinationId || ids.includes(Number(m.transportDestinationId))
+  );
+
+  el("countTransport").textContent = visibleTransports.length;
+  el("transportOverview").innerHTML = "";
+
+  if (!visibleTransports.length) {
+    el("transportOverview").innerHTML =
+      '<div class="muted empty">Inget material är under transport till valda stationer.</div>';
+  } else {
+    visibleTransports
+      .sort((a,b) => a.materialId.localeCompare(b.materialId, "sv"))
+      .forEach(item => {
+        const row = document.createElement("div");
+        row.className = "transport-item";
+        const destination = item.transportDestination || "Destination saknas";
+        row.innerHTML =
+          "<div><strong>" + escapeHtml(item.materialId) + " – " + escapeHtml(item.material) +
+          "</strong><div class='transport-note'>🚚 Under transport → <span class='transport-destination'>" +
+          escapeHtml(destination) + "</span></div></div>" +
+          "<button class='mini-button' type='button'>Öppna</button>";
+
+        const openMaterial = () => {
+          location.href = location.pathname + "?material=" + encodeURIComponent(item.materialId);
+        };
+        row.addEventListener("click", openMaterial);
+        row.querySelector("button").addEventListener("click", event => {
+          event.stopPropagation();
+          openMaterial();
+        });
+        el("transportOverview").appendChild(row);
+      });
+  }
 }
 
 function showMaterialList(title, rows) {
