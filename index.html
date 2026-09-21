@@ -105,6 +105,33 @@
         <div class="card"><h3>🚒 Fordon</h3><div id="vehicleOverview"></div></div>
       </div>
 
+      <div class="order-actions">
+        <button id="orderStockBtn" type="button">📦 BESTÄLLNING LAGER</button>
+        <button id="orderExerciseBtn" type="button">🎯 BESTÄLLNING ÖVNING</button>
+      </div>
+
+      <div id="orderPanel" class="card order-panel">
+        <h3 id="orderTitle">Beställning</h3>
+        <p class="muted">Alla beställningar skickas till Nyköping.</p>
+        <label>Beställande station
+          <select id="orderStation"></select>
+        </label>
+        <label>Material
+          <select id="orderMaterial"></select>
+        </label>
+        <label>Antal
+          <input id="orderQuantity" type="number" min="1" step="1" value="1">
+        </label>
+        <label>Kommentar
+          <textarea id="orderComment" rows="3" placeholder="Valfri kommentar"></textarea>
+        </label>
+        <div class="actions">
+          <button id="submitOrderBtn" type="button">SKICKA BESTÄLLNING</button>
+          <button id="cancelOrderBtn" type="button" class="secondary">AVBRYT</button>
+        </div>
+        <div id="orderMessage" class="message"></div>
+      </div>
+
       <div class="card transport-overview-card">
         <h3>🚚 Under transport <span id="countTransport" class="transport-count">0</span></h3>
         <div id="transportOverview"></div>
