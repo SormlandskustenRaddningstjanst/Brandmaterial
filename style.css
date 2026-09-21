@@ -74,3 +74,11 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .transport-item:first-child{border-top:0}
 .transport-item:hover strong{text-decoration:underline}
 .transport-destination{font-weight:700}
+
+.order-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
+.order-panel{display:none;margin-top:12px}
+.order-panel.active{display:block}
+.order-panel label{display:block;font-weight:700;margin-top:12px}
+.order-panel select,.order-panel input,.order-panel textarea{width:100%;box-sizing:border-box;margin-top:6px}
+.order-panel .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+@media(max-width:640px){.order-actions{grid-template-columns:1fr}}
