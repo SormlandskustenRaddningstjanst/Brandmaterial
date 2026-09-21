@@ -67,3 +67,10 @@ button:disabled{opacity:.55;cursor:not-allowed}
  main{padding:18px 12px 38px}.home-grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr);gap:6px}.stat{padding:12px 5px}.stat strong{font-size:1.45rem}.stat span{font-size:.72rem}
  .topbar{align-items:flex-start}.actions{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.primary-actions{display:block}.primary-actions button{width:100%;margin-bottom:10px}
 }
+
+.transport-overview-card{margin-top:18px}
+.transport-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;padding:0 8px;margin-left:6px;background:#fbe216;color:#2a3768;font-size:.85rem}
+.transport-item{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:12px 0;border-top:1px solid var(--border);cursor:pointer}
+.transport-item:first-child{border-top:0}
+.transport-item:hover strong{text-decoration:underline}
+.transport-destination{font-weight:700}
