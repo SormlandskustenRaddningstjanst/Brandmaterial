@@ -500,6 +500,133 @@ function escapeHtml(value) {
 
 
 const STATION_STORAGE_KEY = "skrtj-selected-stations-v1";
+
+const EXCEL_COLUMNS = [
+  "Material-ID","Material","Kategori","Station","Rakelnummer",
+  "Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"
+];
+
+el("importExcelBtn")?.addEventListener("click", () => {
+  if (typeof XLSX === "undefined") {
+    alert("Excel-biblioteket kunde inte laddas. Kontrollera internetanslutningen och ladda om sidan.");
+    return;
+  }
+  el("excelFileInput").value = "";
+  el("excelFileInput").click();
+});
+
+el("excelFileInput")?.addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const msg = el("excelMessage");
+  msg.className = "message info active";
+  msg.textContent = "Läser Excel-filen…";
+
+  try {
+    const bytes = await file.arrayBuffer();
+    const workbook = XLSX.read(bytes, {type:"array"});
+    const sheet = workbook.Sheets["Brandmaterial"] || workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) throw new Error("Excel-filen saknar ett kalkylblad.");
+
+    const raw = XLSX.utils.sheet_to_json(sheet, {defval:"", raw:false});
+    const rows = raw
+      .map((r, i) => ({...r, __row:i + 2}))
+      .filter(r => EXCEL_COLUMNS.some(k => String(r[k] ?? "").trim() !== ""));
+
+    if (!rows.length) throw new Error("Inga materialrader hittades.");
+    const ids = rows.map(r => String(r["Material-ID"] || "").trim().toUpperCase()).filter(Boolean);
+    const duplicates = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+    if (duplicates.length) throw new Error("Dubbletter i Excel-filen: " + duplicates.join(", "));
+
+    const existing = new Map((overviewData?.material || []).map(m => [String(m.materialId).toUpperCase(), m]));
+    const newCount = ids.filter(id => !existing.has(id)).length;
+    const updateCount = ids.filter(id => existing.has(id)).length;
+
+    const ok = confirm(
+      "Importkontroll\\n\\n" +
+      "Rader: " + rows.length + "\\n" +
+      "Nya: " + newCount + "\\n" +
+      "Befintliga som uppdateras: " + updateCount + "\\n\\n" +
+      "Material som inte finns i Excel-filen lämnas orörda.\\n" +
+      "Tomma importfält raderar inte befintliga värden.\\n\\n" +
+      "Fortsätt med import?"
+    );
+    if (!ok) {
+      msg.className = "message";
+      msg.textContent = "";
+      return;
+    }
+
+    msg.className = "message info active";
+    msg.textContent = "Importerar och kontrollerar mot Baserow…";
+    const response = await fetch(API + "/material/import", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({rows})
+    });
+    let data;
+    try { data = await response.json(); } catch { throw new Error("API:t gav ett ogiltigt svar."); }
+    if (!response.ok) {
+      if (Array.isArray(data.errors)) throw new Error(data.errors.join("\\n"));
+      throw new Error(data.error || data.message || "Importen misslyckades.");
+    }
+
+    msg.className = "message info active";
+    msg.innerHTML = "<strong>✓ Import klar.</strong><br>" +
+      escapeHtml(data.newCount) + " nya · " +
+      escapeHtml(data.updatedCount) + " uppdaterade · " +
+      escapeHtml(data.unchangedCount) + " oförändrade";
+    overviewData = await apiGet("/overview");
+    renderHome();
+  } catch (err) {
+    msg.className = "message error active";
+    msg.innerHTML = "<strong>Importen stoppades.</strong><br>" +
+      escapeHtml(String(err.message || err)).replaceAll("\\n","<br>");
+  }
+});
+
+el("exportExcelBtn")?.addEventListener("click", async () => {
+  const msg = el("excelMessage");
+  try {
+    if (typeof XLSX === "undefined") throw new Error("Excel-biblioteket kunde inte laddas.");
+    msg.className = "message info active";
+    msg.textContent = "Skapar Excel-export…";
+
+    // Hämta fulla materialrader så exporten innehåller kommentarer och länknamn.
+    const materials = overviewData?.material || [];
+    const exportRows = [];
+    for (const m of materials) {
+      let full = {};
+      try { full = await apiGet("/material/" + encodeURIComponent(m.materialId)); } catch {}
+      const linkValue = key => Array.isArray(full[key]) && full[key][0]?.value ? full[key][0].value : "";
+      exportRows.push({
+        "Material-ID": m.materialId || "",
+        "Material": m.material || "",
+        "Kategori": m.category || "",
+        "Station": linkValue("Station"),
+        "Rakelnummer": linkValue("Rakelnummer") || m.rakel || "",
+        "Registreringsnummer": linkValue("Registreringsnummer"),
+        "Kommentar": full["Kommentar"] || m.comment || "",
+        "Aktiv": full["Aktiv"] === false ? false : true,
+        "Transportstatus": full["Transportstatus"]?.value || full["Transportstatus"] || m.transportStatus || "",
+        "Transport till station": linkValue("Transport till station") || m.transportDestination || ""
+      });
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(exportRows, {header:EXCEL_COLUMNS});
+    ws["!cols"] = EXCEL_COLUMNS.map((_,i) => ({wch:[18,24,20,18,16,24,36,12,20,24][i]}));
+    XLSX.utils.book_append_sheet(wb, ws, "Brandmaterial");
+    const date = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, "Brandmaterial_export_" + date + ".xlsx");
+    msg.className = "message info active";
+    msg.textContent = "✓ Excel-export skapad.";
+  } catch(err) {
+    msg.className = "message error active";
+    msg.textContent = "Exporten misslyckades: " + (err.message || err);
+  }
+});
+
 let overviewData = null;
 
 async function startHome() {
