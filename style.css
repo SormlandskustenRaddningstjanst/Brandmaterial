@@ -104,3 +104,16 @@ button:disabled{opacity:.55;cursor:not-allowed}
   font-size:.8rem;line-height:1;vertical-align:middle;
 }
 .level-edit-button:hover{background:#f4f5f8}
+
+.material-plan-card{width:min(1100px,96vw);max-height:92vh;overflow:auto}
+.modal-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.plan-row{display:grid;grid-template-columns:minmax(180px,2fr) 120px 115px 115px 115px 90px;gap:8px;align-items:end;padding:10px 0;border-top:1px solid #e1e3e9}
+.plan-name{display:flex;flex-direction:column}.plan-name span{font-size:.85rem;opacity:.72}
+.plan-row label{font-size:.78rem;font-weight:700}.plan-row input[type=number]{width:100%;box-sizing:border-box;margin-top:3px}
+.vehicle-plan-row{grid-template-columns:minmax(180px,2fr) 130px 150px 90px}
+.hidden{display:none!important}
+@media(max-width:760px){
+ .plan-row,.vehicle-plan-row{grid-template-columns:1fr 1fr}
+ .plan-name{grid-column:1/-1}
+ .plan-save{grid-column:1/-1}
+}
