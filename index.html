@@ -5,64 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rökskydd – Lager och materialhantering</title>
   <style>
-    :root {
-      --primary:#1f4e79; --primary-dark:#163957; --background:#f3f5f7;
-      --card:#fff; --text:#1f2933; --muted:#667085; --border:#d9e0e7;
-      --success:#237a57; --warning:#a15c00; --danger:#a63a3a;
-    }
-    * { box-sizing:border-box; }
-    body { margin:0; font-family:Arial,Helvetica,sans-serif; background:var(--background); color:var(--text); }
-    header { background:var(--primary); color:#fff; padding:24px 16px; text-align:center; }
-    header h1 { margin:0 0 8px; font-size:1.7rem; }
-    header p { margin:0; opacity:.9; }
-    main { max-width:900px; margin:0 auto; padding:20px 14px 40px; }
-    .section { margin-bottom:26px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
-    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; box-shadow:0 3px 10px rgba(0,0,0,.04); }
-    .card h2,.card h3 { margin-top:0; }
-    .muted { color:var(--muted); }
-    .material-id { font-size:1.6rem; font-weight:700; margin:4px 0; }
-    .material-name { font-size:1.2rem; margin-bottom:14px; }
-    .status { background:#eef4f8; border-radius:10px; padding:12px; margin:12px 0 18px; line-height:1.5; }
-    .actions { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-    button,.button {
-      width:100%; border:0; border-radius:10px; padding:14px 12px; font-weight:700;
-      font-size:1rem; cursor:pointer; text-decoration:none; text-align:center;
-      display:inline-block; background:var(--primary); color:#fff;
-    }
-    button:hover,.button:hover { background:var(--primary-dark); }
-    .green { background:var(--success); }
-    .orange { background:var(--warning); }
-    .choice {
-      width:100%; text-align:left; background:#fff; color:var(--text);
-      border:1px solid var(--border); margin:0 0 10px; padding:14px;
-    }
-    .choice:hover { background:#eef4f8; }
-    .choice strong { display:block; margin-bottom:3px; }
-    .panel { display:none; margin-top:18px; }
-    .panel.active { display:block; }
-    .message { display:none; border-radius:10px; padding:14px; margin-top:16px; }
-    .message.active { display:block; }
-    .info { background:#eaf4ff; border:1px solid #a8cbe8; }
-    .error { background:#fff0f0; border:1px solid #e3aaaa; color:#7f2222; }
-    .loading { text-align:center; padding:25px; color:var(--muted); }
-    .home-only { display:block; }
-    .qr-only { display:none; }
-    body.qr-mode .home-only { display:none; }
-    body.qr-mode .qr-only { display:block; }
-    .footer { text-align:center; color:var(--muted); font-size:.85rem; margin-top:30px; }
-    @media(max-width:520px) {
-      .actions { grid-template-columns:1fr; }
-      header h1 { font-size:1.4rem; }
-    }
-  </style>
+:root{--primary:#1f4e79;--primary-dark:#163957;--background:#f3f5f7;--card:#fff;--text:#1f2933;--muted:#667085;--border:#d9e0e7;--success:#237a57;--warning:#a15c00;--danger:#a63a3a}
+*{box-sizing:border-box} body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--background);color:var(--text)}
+header{background:var(--primary);color:#fff;padding:20px 16px;text-align:center} header h1{margin:0 0 6px;font-size:1.6rem} header p{margin:0;opacity:.9}
+main{max-width:960px;margin:0 auto;padding:18px 14px 40px}.section{margin-bottom:22px}
+.card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:0 3px 10px rgba(0,0,0,.04)}
+.card h2,.card h3{margin-top:0}.muted{color:var(--muted)}.small{font-size:.88rem}.material-id{font-size:1.6rem;font-weight:700;margin:4px 0}.material-name{font-size:1.2rem;margin-bottom:14px}
+.status{background:#eef4f8;border-radius:10px;padding:12px;margin:12px 0 18px;line-height:1.5}.actions{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+button,.button{width:100%;border:0;border-radius:10px;padding:14px 12px;font-weight:700;font-size:1rem;cursor:pointer;text-decoration:none;text-align:center;display:inline-block;background:var(--primary);color:#fff}
+button:hover,.button:hover{background:var(--primary-dark)}button:disabled{opacity:.55;cursor:not-allowed}.green{background:var(--success)}.orange{background:var(--warning)}
+.choice{width:100%;text-align:left;background:#fff;color:var(--text);border:1px solid var(--border);margin:0 0 10px;padding:14px}.choice:hover{background:#eef4f8}.choice strong{display:block;margin-bottom:3px}
+.panel{display:none;margin-top:18px}.panel.active{display:block}.message{display:none;border-radius:10px;padding:14px;margin-top:16px}.message.active{display:block}.info{background:#eaf4ff;border:1px solid #a8cbe8}.error{background:#fff0f0;border:1px solid #e3aaaa;color:#7f2222}.loading{text-align:center;padding:25px;color:var(--muted)}
+.home-only{display:block}.qr-only{display:none}body.qr-mode .home-only{display:none}body.qr-mode .qr-only{display:block}.footer{text-align:center;color:var(--muted);font-size:.85rem;margin-top:30px}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.topbar h2{margin:0}.settings-button{width:auto;padding:10px 14px;background:#fff;color:var(--primary);border:1px solid var(--border)}
+.selected-box{background:#eaf4ff;border:1px solid #b7d3e8;border-radius:12px;padding:12px 14px;margin-bottom:14px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.stat{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}.stat strong{display:block;font-size:1.55rem}.stat span{font-size:.82rem;color:var(--muted)}
+.home-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.overview-card{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding:13px 0}.overview-card:first-child{border-top:0}.mini-button{width:auto;padding:9px 13px;font-size:.88rem}
+.check-row{display:flex;align-items:center;gap:11px;padding:12px 4px;border-bottom:1px solid var(--border);font-weight:600}.check-row input{width:20px;height:20px}.settings-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.secondary{background:#667085}
+.material-row{display:flex;flex-direction:column;gap:3px;padding:11px 0;border-top:1px solid var(--border)}.material-row:first-child{border-top:0}.empty{padding:12px 0}
+@media(max-width:650px){.home-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr 1fr}.topbar{align-items:flex-start}.actions{grid-template-columns:1fr}header h1{font-size:1.35rem}}
+</style>
 </head>
 <body>
 <header>
   <h1>Rökskydd – Lager och materialhantering</h1>
   <p id="headerText">Lageröversikt och materialhantering</p>
 </header>
-
 <main>
   <!-- QR-läge -->
   <section class="qr-only">
@@ -102,39 +70,56 @@
     <div id="errorMessage" class="message error"></div>
   </section>
 
-  <!-- Vanlig startsida -->
+
+
   <section class="home-only section">
-    <div class="grid">
-      <div class="card">
-        <h3>🏢 Lageröversikt stationer</h3>
-        <p class="muted">Visa material och lagerstatus för stationerna.</p>
-        <a class="button" href="https://baserow.io/public/grid/qHxAZjCM3xAF9hQJEvXR8WitVPd_eHWMODbFs4xHRiA" target="_blank" rel="noopener noreferrer">Visa stationer</a>
+    <div id="homeLoading" class="card loading">Hämtar lageröversikt…</div>
+    <div id="homeError" class="message error"></div>
+
+    <div id="homeContent" style="display:none">
+      <div class="topbar">
+        <div>
+          <h2>Lageröversikt</h2>
+          <div class="muted">Visar dina valda stationer</div>
+        </div>
+        <button id="settingsBtn" class="settings-button" type="button">⚙ Inställningar</button>
       </div>
 
-      <div class="card">
-        <h3>🚒 Lageröversikt fordon</h3>
-        <p class="muted">Visa material och lagerstatus för fordonen.</p>
-        <a class="button" href="https://baserow.io/public/grid/fPzJHcHWF4hSP9EruphziqgMU-qUfpo_v5PQBOwdAxM" target="_blank" rel="noopener noreferrer">Visa fordon</a>
+      <div class="selected-box"><strong>Mina stationer:</strong> <span id="selectedStationsLabel">–</span></div>
+
+      <div class="stats">
+        <div class="stat"><strong id="countStations">0</strong><span>Stationer</span></div>
+        <div class="stat"><strong id="countStationStock">0</strong><span>Stationslager</span></div>
+        <div class="stat"><strong id="countVehicleStock">0</strong><span>På fordon</span></div>
       </div>
 
-      <div class="card">
-        <h3>🧺 Pågående tvättreturer</h3>
-        <p class="muted">Följ material som har skickats till tvätt.</p>
-        <a class="button" href="https://baserow.io/public/grid/AdmF2DpAHhGkqmGC2JxWP2CM1J_t5P24nGfMsHXyeMo" target="_blank" rel="noopener noreferrer">Visa pågående returer</a>
+      <div class="home-grid">
+        <div class="card"><h3>🏢 Stationslager</h3><div id="stationOverview"></div></div>
+        <div class="card"><h3>🚒 Fordon</h3><div id="vehicleOverview"></div></div>
       </div>
 
-      <div class="card">
-        <h3>⚠️ Avvikelser</h3>
-        <p class="muted">Visa registrerade avvikelser för tvättreturer.</p>
-        <a class="button orange" href="https://baserow.io/public/grid/cqwL7M9m66JAN2mhfWDM7RezTAPNCCLfQX5xw-fFE9o" target="_blank" rel="noopener noreferrer">Visa avvikelser</a>
+      <div id="detailPanel" class="card panel">
+        <div class="topbar"><h3 id="detailTitle">Material</h3><button id="closeDetailBtn" class="mini-button secondary" type="button">Stäng</button></div>
+        <div id="detailList"></div>
+      </div>
+
+      <div id="settingsPanel" class="card panel">
+        <h3>⚙ Mina stationer</h3>
+        <p class="muted">Valet sparas på den här enheten tills du ändrar det.</p>
+        <label class="check-row"><input id="allStations" type="checkbox"><span>Alla stationer</span></label>
+        <div id="stationChecks"></div>
+        <div class="settings-actions">
+          <button id="saveSettingsBtn" class="green" type="button">Spara</button>
+          <button id="closeSettingsBtn" class="secondary" type="button">Avbryt</button>
+        </div>
       </div>
     </div>
   </section>
 
   <div class="footer">Rökskydd – intern materialhantering</div>
 </main>
-
 <script>
+
 const API = "https://ros-material-api.peter-hasselberg.workers.dev";
 
 const params = new URLSearchParams(location.search);
@@ -146,6 +131,8 @@ if (material) {
   document.body.classList.add("qr-mode");
   el("headerText").textContent = "Skannat material";
   startQrMode();
+} else {
+  startHome();
 }
 
 async function apiGet(path) {
@@ -410,6 +397,185 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+
+const STATION_STORAGE_KEY = "skrtj-selected-stations-v1";
+let overviewData = null;
+
+async function startHome() {
+  try {
+    overviewData = await apiGet("/overview");
+    renderStationSettings();
+    renderHome();
+  } catch (err) {
+    el("homeLoading").style.display = "none";
+    el("homeError").textContent = err.message;
+    el("homeError").classList.add("active");
+  }
+}
+
+function getSavedStationSelection() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STATION_STORAGE_KEY));
+    if (parsed && parsed.all === true) return { all:true, ids:[] };
+    if (parsed && Array.isArray(parsed.ids) && parsed.ids.length) {
+      return { all:false, ids:parsed.ids.map(Number).filter(Number.isInteger) };
+    }
+  } catch {}
+  return { all:true, ids:[] };
+}
+
+function saveStationSelection(selection) {
+  localStorage.setItem(STATION_STORAGE_KEY, JSON.stringify(selection));
+}
+
+function selectedStationIds() {
+  const saved = getSavedStationSelection();
+  if (saved.all) return overviewData.stations.map(s => Number(s.id));
+  return saved.ids;
+}
+
+function renderStationSettings() {
+  const saved = getSavedStationSelection();
+  el("allStations").checked = saved.all;
+  el("stationChecks").innerHTML = "";
+
+  overviewData.stations.forEach(station => {
+    const label = document.createElement("label");
+    label.className = "check-row";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = station.id;
+    input.checked = saved.all || saved.ids.includes(Number(station.id));
+    input.disabled = saved.all;
+    const span = document.createElement("span");
+    span.textContent = station.name;
+    label.append(input, span);
+    el("stationChecks").appendChild(label);
+  });
+
+  updateSelectedLabel();
+}
+
+function updateSelectedLabel() {
+  const saved = getSavedStationSelection();
+  if (saved.all) {
+    el("selectedStationsLabel").textContent = "Alla stationer";
+    return;
+  }
+  const names = overviewData.stations
+    .filter(s => saved.ids.includes(Number(s.id)))
+    .map(s => s.name);
+  el("selectedStationsLabel").textContent = names.join(", ") || "Ingen station vald";
+}
+
+function renderHome() {
+  el("homeLoading").style.display = "none";
+  el("homeContent").style.display = "block";
+
+  const ids = selectedStationIds();
+  const stations = overviewData.stations.filter(s => ids.includes(Number(s.id)));
+  const vehicles = overviewData.vehicles.filter(v => ids.includes(Number(v.stationId)));
+  const vehicleIds = new Set(vehicles.map(v => Number(v.id)));
+  const materialRows = overviewData.material.filter(m =>
+    (m.stationId && ids.includes(Number(m.stationId))) ||
+    (m.vehicleId && vehicleIds.has(Number(m.vehicleId)))
+  );
+
+  const stationStock = materialRows.filter(m => m.storageType === "Stationslager");
+  const vehicleStock = materialRows.filter(m => m.storageType === "Fordon");
+
+  el("countStations").textContent = stations.length;
+  el("countStationStock").textContent = stationStock.length;
+  el("countVehicleStock").textContent = vehicleStock.length;
+
+  el("stationOverview").innerHTML = "";
+  stations.forEach(station => {
+    const stock = stationStock.filter(m => Number(m.stationId) === Number(station.id));
+    const card = document.createElement("div");
+    card.className = "overview-card";
+    card.innerHTML =
+      "<div><strong>" + escapeHtml(station.name) + "</strong><div class='muted small'>" +
+      stock.length + " material i stationslager</div></div>" +
+      "<button class='mini-button' type='button'>Visa</button>";
+    card.querySelector("button").addEventListener("click", () =>
+      showMaterialList(station.name, stock)
+    );
+    el("stationOverview").appendChild(card);
+  });
+
+  el("vehicleOverview").innerHTML = "";
+  vehicles.forEach(vehicle => {
+    const stock = vehicleStock.filter(m => Number(m.vehicleId) === Number(vehicle.id));
+    const type = typeof vehicle.type === "object" ? (vehicle.type?.value || "") : (vehicle.type || "");
+    const label = [vehicle.rakel, vehicle.registration].filter(Boolean).join(" – ");
+    const card = document.createElement("div");
+    card.className = "overview-card";
+    card.innerHTML =
+      "<div><strong>" + escapeHtml(label || "Fordon") + "</strong><div class='muted small'>" +
+      escapeHtml(type) + (type ? " • " : "") + stock.length + " material</div></div>" +
+      "<button class='mini-button' type='button'>Visa</button>";
+    card.querySelector("button").addEventListener("click", () =>
+      showMaterialList(label || "Fordon", stock)
+    );
+    el("vehicleOverview").appendChild(card);
+  });
+
+  if (!vehicles.length) {
+    el("vehicleOverview").innerHTML = '<div class="muted empty">Inga fordon registrerade för valda stationer.</div>';
+  }
+}
+
+function showMaterialList(title, rows) {
+  el("detailTitle").textContent = title;
+  el("detailList").innerHTML = "";
+  if (!rows.length) {
+    el("detailList").innerHTML = '<div class="muted empty">Inget material.</div>';
+  } else {
+    rows.sort((a,b) => a.materialId.localeCompare(b.materialId, "sv")).forEach(item => {
+      const div = document.createElement("div");
+      div.className = "material-row";
+      div.innerHTML = "<strong>" + escapeHtml(item.materialId) + "</strong><span>" +
+        escapeHtml(item.material) + (item.comment ? " • " + escapeHtml(item.comment) : "") + "</span>";
+      el("detailList").appendChild(div);
+    });
+  }
+  el("detailPanel").classList.add("active");
+  el("detailPanel").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function openSettings() {
+  renderStationSettings();
+  el("settingsPanel").classList.add("active");
+  el("settingsPanel").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function saveSettingsFromUi() {
+  const all = el("allStations").checked;
+  const ids = [...el("stationChecks").querySelectorAll("input:checked")].map(x => Number(x.value));
+  if (!all && ids.length === 0) {
+    alert("Välj minst en station eller Alla stationer.");
+    return;
+  }
+  saveStationSelection({all, ids: all ? [] : ids});
+  el("settingsPanel").classList.remove("active");
+  renderStationSettings();
+  renderHome();
+}
+
+el("settingsBtn")?.addEventListener("click", openSettings);
+el("closeSettingsBtn")?.addEventListener("click", () => el("settingsPanel").classList.remove("active"));
+el("saveSettingsBtn")?.addEventListener("click", saveSettingsFromUi);
+el("closeDetailBtn")?.addEventListener("click", () => el("detailPanel").classList.remove("active"));
+el("allStations")?.addEventListener("change", () => {
+  const all = el("allStations").checked;
+  el("stationChecks").querySelectorAll("input").forEach(input => {
+    input.disabled = all;
+    if (all) input.checked = true;
+    else input.checked = false;
+  });
+});
+
 </script>
 </body>
 </html>
