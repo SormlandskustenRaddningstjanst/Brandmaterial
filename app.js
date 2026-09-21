@@ -806,8 +806,8 @@ function renderHome() {
     card.innerHTML =
       "<div><strong>" + escapeHtml(station.name) + "</strong><div class='muted small'>" +
       stock.length + " material i stationslager</div>" + levelHtml + "</div>" +
-      "<button class='mini-button' type='button'>Visa</button>";
-    card.querySelector("button").addEventListener("click", () =>
+      "<button class='mini-button station-show-material' type='button'>Visa</button>";
+    card.querySelector(".station-show-material").addEventListener("click", () =>
       showMaterialList(station.name, stock)
     );
     card.querySelectorAll(".station-level-edit").forEach(btn => {
@@ -839,8 +839,8 @@ function renderHome() {
       "<div><strong><i class='status-dot " + overallStatus + "'></i>" + escapeHtml(label || "Fordon") +
       "</strong><div class='muted small'>" + escapeHtml(type) + (type ? " • " : "") +
       stock.length + " material</div>" + reqHtml + "</div>" +
-      "<button class='mini-button' type='button'>Visa</button>";
-    card.querySelector("button").addEventListener("click", () =>
+      "<button class='mini-button vehicle-show-material' type='button'>Visa</button>";
+    card.querySelector(".vehicle-show-material").addEventListener("click", () =>
       showMaterialList(label || "Fordon", stock)
     );
     card.querySelectorAll(".vehicle-level-edit").forEach(btn => {
