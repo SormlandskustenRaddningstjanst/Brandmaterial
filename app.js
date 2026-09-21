@@ -1096,3 +1096,113 @@ el("allStations")?.addEventListener("change", () => {
 });
 
 if (el("stockOrders")) loadOrders();
+
+
+// Excel-knappar: explicit init efter att hela sidan och appen är laddad.
+(function initExcelButtons() {
+  const importBtn = document.getElementById("importExcelBtn");
+  const exportBtn = document.getElementById("exportExcelBtn");
+  const templateBtn = document.getElementById("downloadTemplateBtn");
+  const fileInput = document.getElementById("excelFileInput");
+
+  function requireXlsx() {
+    if (typeof XLSX === "undefined") {
+      alert("Excel-funktionen kunde inte laddas. Ladda om sidan och försök igen.");
+      return false;
+    }
+    return true;
+  }
+
+  if (importBtn && fileInput) {
+    importBtn.onclick = function() {
+      if (!requireXlsx()) return;
+      fileInput.value = "";
+      fileInput.click();
+    };
+  }
+
+  if (exportBtn) {
+    exportBtn.onclick = async function() {
+      if (!requireXlsx()) return;
+      const msg = document.getElementById("excelMessage");
+      try {
+        msg.className = "message info active";
+        msg.textContent = "Skapar Excel-export…";
+
+        const currentOverview = await apiGet("/overview");
+        const materials = currentOverview.material || [];
+        const rows = [];
+
+        for (const m of materials) {
+          let full = {};
+          try { full = await apiGet("/material/" + encodeURIComponent(m.materialId)); } catch (_) {}
+          const linkValue = key =>
+            Array.isArray(full[key]) && full[key][0]?.value ? String(full[key][0].value) : "";
+
+          rows.push({
+            "Material-ID": m.materialId || "",
+            "Material": m.material || "",
+            "Kategori": m.category || "",
+            "Station": linkValue("Station"),
+            "Rakelnummer": linkValue("Rakelnummer") || m.rakel || "",
+            "Registreringsnummer": linkValue("Registreringsnummer"),
+            "Kommentar": full["Kommentar"] || m.comment || "",
+            "Aktiv": full["Aktiv"] === false ? false : true,
+            "Transportstatus": full["Transportstatus"]?.value || full["Transportstatus"] || m.transportStatus || "",
+            "Transport till station": linkValue("Transport till station") || m.transportDestination || ""
+          });
+        }
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(rows, {header: EXCEL_COLUMNS});
+        ws["!cols"] = EXCEL_COLUMNS.map((_,i) => ({wch:[18,24,20,18,16,24,36,12,20,24][i]}));
+        XLSX.utils.book_append_sheet(wb, ws, "Brandmaterial");
+        XLSX.writeFile(wb, "Brandmaterial_export_" + new Date().toISOString().slice(0,10) + ".xlsx");
+
+        msg.className = "message info active";
+        msg.textContent = "✓ Excel-export skapad.";
+      } catch (err) {
+        msg.className = "message error active";
+        msg.textContent = "Exporten misslyckades: " + (err.message || err);
+      }
+    };
+  }
+
+  if (templateBtn) {
+    templateBtn.onclick = function() {
+      if (!requireXlsx()) return;
+
+      const wb = XLSX.utils.book_new();
+      const example = [{
+        "Material-ID":"SKRTJ-00064",
+        "Material":"Slang 76",
+        "Kategori":"Slang",
+        "Station":"Nyköping",
+        "Rakelnummer":"",
+        "Registreringsnummer":"",
+        "Kommentar":"Exempelrad – ta bort eller ersätt före import",
+        "Aktiv":true,
+        "Transportstatus":"Ingen transport",
+        "Transport till station":""
+      }];
+      const ws = XLSX.utils.json_to_sheet(example, {header: EXCEL_COLUMNS});
+      ws["!cols"] = EXCEL_COLUMNS.map((_,i) => ({wch:[18,24,20,18,16,24,38,12,20,24][i]}));
+      XLSX.utils.book_append_sheet(wb, ws, "Brandmaterial");
+
+      const infoRows = [
+        ["Importregel","Beskrivning"],
+        ["Material-ID","Unik nyckel. Befintligt ID uppdateras, nytt ID skapas."],
+        ["Dubbletter","Samma Material-ID får inte förekomma flera gånger i importfilen."],
+        ["Tomma fält","Tomma importfält raderar inte befintliga uppgifter."],
+        ["Saknas i filen","Befintligt material som saknas i importfilen lämnas orört."],
+        ["Placering","Station/Fordon/Transport valideras innan import."]
+      ];
+      const info = XLSX.utils.aoa_to_sheet(infoRows);
+      info["!cols"] = [{wch:22},{wch:72}];
+      XLSX.utils.book_append_sheet(wb, info, "Instruktion");
+
+      XLSX.writeFile(wb, "Brandmaterial_importmall.xlsx");
+    };
+  }
+})();
+
