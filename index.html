@@ -22,7 +22,7 @@ button:hover,.button:hover{background:var(--primary-dark)}button:disabled{opacit
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.stat{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}.stat strong{display:block;font-size:1.55rem}.stat span{font-size:.82rem;color:var(--muted)}
 .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.overview-card{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding:13px 0}.overview-card:first-child{border-top:0}.mini-button{width:auto;padding:9px 13px;font-size:.88rem}
 .check-row{display:flex;align-items:center;gap:11px;padding:12px 4px;border-bottom:1px solid var(--border);font-weight:600}.check-row input{width:20px;height:20px}.settings-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.secondary{background:#667085}
-.material-row{display:flex;flex-direction:column;gap:3px;padding:11px 0;border-top:1px solid var(--border)}.material-row:first-child{border-top:0}.empty{padding:12px 0}
+.material-row{display:flex;flex-direction:column;gap:3px;padding:11px 0;border-top:1px solid var(--border);cursor:pointer;border-radius:8px}.material-row:first-child{border-top:0}.material-row:hover{background:#eef4f8;padding-left:8px;padding-right:8px}.empty{padding:12px 0}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}.field label{font-weight:700}.field input,.field select,.field textarea{width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);font:inherit}.field textarea{min-height:90px;resize:vertical}.primary-actions{display:flex;gap:10px;align-items:center;margin-bottom:14px}.primary-actions button{width:auto}.success-box{background:#ecf8f1;border:1px solid #a9d6bb;color:#1d6043}.created-qr{text-align:center;margin-top:16px;padding:16px;background:#fff;border:1px solid var(--border);border-radius:12px}.created-qr img{width:220px;max-width:100%;height:auto;display:block;margin:10px auto}.created-qr strong{font-size:1.2rem}.print-button{margin-top:12px;width:auto}.print-label{display:none}
 @media(max-width:650px){.form-grid{grid-template-columns:1fr}.primary-actions{display:block}.primary-actions button{width:100%;margin-bottom:10px}.home-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr 1fr}.topbar{align-items:flex-start}.actions{grid-template-columns:1fr}header h1{font-size:1.35rem}}
 </style>
@@ -586,7 +586,20 @@ function showMaterialList(title, rows) {
       const div = document.createElement("div");
       div.className = "material-row";
       div.innerHTML = "<strong>" + escapeHtml(item.materialId) + "</strong><span>" +
-        escapeHtml(item.material) + (item.comment ? " • " + escapeHtml(item.comment) : "") + "</span>";
+        escapeHtml(item.material) + (item.comment ? " • " + escapeHtml(item.comment) : "") +
+        "</span><span class='muted small'>Tryck för att öppna materialet</span>";
+      div.tabIndex = 0;
+      div.setAttribute("role", "button");
+      const openMaterial = () => {
+        location.href = location.pathname + "?material=" + encodeURIComponent(item.materialId);
+      };
+      div.addEventListener("click", openMaterial);
+      div.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openMaterial();
+        }
+      });
       el("detailList").appendChild(div);
     });
   }
