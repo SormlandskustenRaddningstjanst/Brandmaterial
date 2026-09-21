@@ -82,3 +82,13 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .order-panel select,.order-panel input,.order-panel textarea{width:100%;box-sizing:border-box;margin-top:6px}
 .order-panel .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 @media(max-width:640px){.order-actions{grid-template-columns:1fr}}
+
+.orders-overview-card{margin-top:18px}
+.order-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.order-columns h4{margin:8px 0}
+.order-row{padding:12px 0;border-top:1px solid var(--border)}
+.order-row:first-child{border-top:0}
+.order-meta{font-size:.86rem;margin-top:4px}
+.order-status-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.order-status-actions button{padding:7px 9px;font-size:.78rem}
+@media(max-width:760px){.order-columns{grid-template-columns:1fr}}
