@@ -25,6 +25,81 @@ async function apiGet(path) {
   return data;
 }
 
+
+async function apiPost(path, body) {
+  const response = await fetch(API + path, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(body)
+  });
+  let data;
+  try { data = await response.json(); }
+  catch { throw new Error("API:t gav ett ogiltigt svar."); }
+  if (!response.ok) throw new Error(data.error || data.message || "API-fel");
+  return data;
+}
+
+async function editStationLevel(level, stationName) {
+  const currentRedMax = level.redBelow !== null ? Math.max(0, Number(level.redBelow) - 1) : 0;
+  const currentYellowMax = level.greenFrom !== null ? Math.max(currentRedMax + 1, Number(level.greenFrom) - 1) : currentRedMax + 1;
+  const currentGreenMax = level.max !== null ? Number(level.max) : currentYellowMax + 1;
+
+  const redText = prompt(
+    stationName + " – " + level.material + "\n\n🔴 Röd nivå t.o.m. antal:",
+    String(currentRedMax)
+  );
+  if (redText === null) return;
+
+  const yellowText = prompt(
+    "🟡 Gul nivå t.o.m. antal:\n(Gul börjar automatiskt på " + (Number(redText) + 1) + ")",
+    String(currentYellowMax)
+  );
+  if (yellowText === null) return;
+
+  const greenText = prompt(
+    "🟢 Grön nivå – högsta antal / MAX:\n(Grön börjar automatiskt på " + (Number(yellowText) + 1) + ")\n\nFör exakt grön nivå anger du samma tal som grön start.",
+    String(currentGreenMax)
+  );
+  if (greenText === null) return;
+
+  const redMax = Number(redText), yellowMax = Number(yellowText), greenMax = Number(greenText);
+  if (![redMax,yellowMax,greenMax].every(Number.isInteger) || redMax < 0 || !(redMax < yellowMax && yellowMax < greenMax)) {
+    alert("Ogiltiga nivåer.\n\nDe måste vara heltal och följa:\nRöd högsta < Gul högsta < Grön MAX.");
+    return;
+  }
+
+  try {
+    await apiPost("/stock-level", {id:level.id, redMax, yellowMax, greenMax});
+    overviewData = await apiGet("/overview");
+    renderHome();
+  } catch (err) {
+    alert("Kunde inte spara stationsnivån:\n" + (err.message || err));
+  }
+}
+
+async function editVehicleRequirement(requirement, vehicleLabel) {
+  const value = prompt(
+    vehicleLabel + " – " + requirement.material +
+    "\n\n🟢 Ange exakt antal som ska vara GRÖNT:\nAlla andra antal visas rött.",
+    String(requirement.required ?? 0)
+  );
+  if (value === null) return;
+
+  const required = Number(value);
+  if (!Number.isInteger(required) || required < 0) {
+    alert("Grön nivå måste vara ett heltal 0 eller högre.");
+    return;
+  }
+
+  try {
+    await apiPost("/vehicle-requirement", {id:requirement.id, required});
+    overviewData = await apiGet("/overview");
+    renderHome();
+  } catch (err) {
+    alert("Kunde inte spara fordonsnivån:\n" + (err.message || err));
+  }
+}
+
 async function startQrMode() {
   if (!/^SKRTJ-\d{5}$/.test(material)) {
     showError("Ogiltigt Material-ID: " + material);
@@ -725,7 +800,8 @@ function renderHome() {
     const levelHtml = levels.length ? "<div class='level-list'>" + levels.map(x =>
       "<div class='level-row'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
       escapeHtml(x.material) + "</span><span class='level-count'>" + escapeHtml(x.actual) +
-      (x.max !== null ? "/" + escapeHtml(x.max) : "") + "</span></div>"
+      (x.max !== null ? "/" + escapeHtml(x.max) : "") +
+      " <button class='level-edit-button station-level-edit' type='button' data-level-id='" + escapeHtml(x.id) + "'>✏️</button></span></div>"
     ).join("") + "</div>" : "";
     card.innerHTML =
       "<div><strong>" + escapeHtml(station.name) + "</strong><div class='muted small'>" +
@@ -734,6 +810,13 @@ function renderHome() {
     card.querySelector("button").addEventListener("click", () =>
       showMaterialList(station.name, stock)
     );
+    card.querySelectorAll(".station-level-edit").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.stopPropagation();
+        const level = levels.find(x => Number(x.id) === Number(btn.dataset.levelId));
+        if (level) editStationLevel(level, station.name);
+      });
+    });
     el("stationOverview").appendChild(card);
   });
 
@@ -749,7 +832,8 @@ function renderHome() {
     const reqHtml = requirements.length ? "<div class='level-list'>" + requirements.map(x =>
       "<div class='level-row'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
       escapeHtml(x.material) + "</span><span class='level-count'>" + escapeHtml(x.actual) + "/" +
-      escapeHtml(x.required ?? "–") + "</span></div>"
+      escapeHtml(x.required ?? "–") +
+      " <button class='level-edit-button vehicle-level-edit' type='button' data-requirement-id='" + escapeHtml(x.id) + "'>✏️</button></span></div>"
     ).join("") + "</div>" : "<div class='muted small'>Inga materialkrav registrerade</div>";
     card.innerHTML =
       "<div><strong><i class='status-dot " + overallStatus + "'></i>" + escapeHtml(label || "Fordon") +
@@ -759,6 +843,13 @@ function renderHome() {
     card.querySelector("button").addEventListener("click", () =>
       showMaterialList(label || "Fordon", stock)
     );
+    card.querySelectorAll(".vehicle-level-edit").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.stopPropagation();
+        const requirement = requirements.find(x => Number(x.id) === Number(btn.dataset.requirementId));
+        if (requirement) editVehicleRequirement(requirement, label || "Fordon");
+      });
+    });
     el("vehicleOverview").appendChild(card);
   });
 
