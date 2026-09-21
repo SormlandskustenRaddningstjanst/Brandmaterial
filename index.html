@@ -71,6 +71,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .field textarea{min-height:90px;resize:vertical}
 .primary-actions{display:flex;gap:10px;align-items:center;margin-bottom:14px}.primary-actions button{width:auto}
 .success-box{background:#ecf8f1;border:1px solid #a9d6bb;color:#1d6043}
+.level-list{margin-top:8px}.level-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:7px 0;border-top:1px solid var(--border);font-size:.88rem}.level-row:first-child{border-top:0}.level-count{white-space:nowrap;font-weight:700}.status-dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:7px;vertical-align:-1px}.status-dot.green{background:#238636}.status-dot.yellow{background:#e5b700}.status-dot.red{background:#c62828}.transport-note{color:#8a5b00}
 .created-qr{text-align:center;margin-top:16px;padding:16px;background:#fff;border:1px solid var(--border)}.created-qr img{width:220px;max-width:100%;height:auto;display:block;margin:10px auto}.created-qr strong{font-size:1.2rem}.print-button{margin-top:12px;width:auto}
 @media(max-width:650px){
  .header-inner{padding:16px 14px 20px}.skrtj-logo{width:230px;max-width:78vw}.brand-title{font-size:1.8rem;margin-top:22px}.header-rule{height:10px}
@@ -111,6 +112,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
       <div class="actions">
         <button id="checkinBtn" class="green">📥 CHECKA IN</button>
         <button id="checkoutBtn">📤 CHECKA UT</button>
+        <button id="transportBtn" class="orange">🚚 TRANSPORT</button>
       </div>
       <div style="margin-top:12px">
         <button id="printExistingQrBtn" class="secondary" type="button">🖨 Skriv ut QR-etikett</button>
@@ -126,6 +128,12 @@ button:disabled{opacity:.55;cursor:not-allowed}
         <h3>Välj fordon</h3>
         <p class="muted">Endast aktiva fordon på samma station visas. Valet sparas efter bekräftelse.</p>
         <div id="vehiclesList"></div>
+      </div>
+
+      <div id="transportPanel" class="panel">
+        <h3>🚚 Transport till station</h3>
+        <p class="muted">Materialet lämnar sin nuvarande placering direkt och räknas inte i lager eller på fordon förrän det checkas in på destinationen.</p>
+        <div id="transportStationsList"></div>
       </div>
 
       <div id="selectionMessage" class="message info"></div>
@@ -282,8 +290,15 @@ async function startQrMode() {
       locationText = stations.map(x => x.value).join(", ");
     }
 
+    const transportStatus = row["Transportstatus"]?.value || row["Transportstatus"] || "";
+    const transportDest = Array.isArray(row["Transport till station"])
+      ? row["Transport till station"].map(x => x.value).filter(Boolean).join(", ")
+      : "";
+    if (transportStatus === "Under transport") {
+      locationText = "🚚 Under transport" + (transportDest ? " → " + transportDest : "");
+    }
     el("currentLocation").textContent = locationText;
-    el("lagerType").textContent = row["Lagertyp"] || "";
+    el("lagerType").textContent = transportStatus === "Under transport" ? "Under transport" : (row["Lagertyp"] || "");
     el("loading").style.display = "none";
     el("materialCard").style.display = "block";
   } catch (err) {
@@ -299,6 +314,7 @@ function showError(message) {
 
 el("checkinBtn").addEventListener("click", async () => {
   el("checkoutPanel").classList.remove("active");
+  el("transportPanel").classList.remove("active");
   el("selectionMessage").classList.remove("active");
   el("checkinPanel").classList.add("active");
 
@@ -326,6 +342,7 @@ el("checkinBtn").addEventListener("click", async () => {
 
 el("checkoutBtn").addEventListener("click", async () => {
   el("checkinPanel").classList.remove("active");
+  el("transportPanel").classList.remove("active");
   el("selectionMessage").classList.remove("active");
   el("checkoutPanel").classList.add("active");
 
@@ -387,6 +404,67 @@ el("checkoutBtn").addEventListener("click", async () => {
   }
 });
 
+
+el("transportBtn").addEventListener("click", async () => {
+  el("checkinPanel").classList.remove("active");
+  el("checkoutPanel").classList.remove("active");
+  el("selectionMessage").classList.remove("active");
+  el("transportPanel").classList.add("active");
+
+  if (el("transportStationsList").dataset.loaded) return;
+  el("transportStationsList").innerHTML = '<div class="loading">Hämtar stationer…</div>';
+
+  try {
+    const rows = await apiGet("/stations");
+    const active = rows.filter(row => row["Aktiv"] === true);
+    el("transportStationsList").innerHTML = "";
+    active.forEach(row => {
+      const b = document.createElement("button");
+      b.className = "choice";
+      const name = row["Station"] || row["Station-ID"] || "Station";
+      b.innerHTML = "<strong>" + escapeHtml(name) + "</strong>" + (row["Adress"] ? escapeHtml(row["Adress"]) : "");
+      b.addEventListener("click", () => selectTransportStation(row));
+      el("transportStationsList").appendChild(b);
+    });
+    el("transportStationsList").dataset.loaded = "1";
+  } catch (err) {
+    el("transportStationsList").innerHTML = '<div class="message error active">' + escapeHtml(err.message) + "</div>";
+  }
+});
+
+async function selectTransportStation(row) {
+  const stationName = row["Station"] || row["Station-ID"] || "vald station";
+  if (!confirm("Markera " + material + " för transport till " + stationName + "?")) return;
+
+  el("selectionMessage").className = "message info active";
+  el("selectionMessage").innerHTML = "<strong>Sparar…</strong><br>Markerar " + escapeHtml(material) +
+    " för transport till " + escapeHtml(stationName) + ".";
+  ["checkinBtn","checkoutBtn","transportBtn"].forEach(id => el(id).disabled = true);
+
+  try {
+    const response = await fetch(API + "/transport", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({materialId:material, stationId:Number(row.id)})
+    });
+    let data;
+    try { data = await response.json(); } catch { throw new Error("API:t gav ett ogiltigt svar."); }
+    if (!response.ok) throw new Error(data.message || data.error || "Transporten kunde inte sparas.");
+
+    el("selectionMessage").className = "message info active";
+    el("selectionMessage").innerHTML = "<strong>✓ Transporten är sparad.</strong><br>" +
+      escapeHtml(data.message || (material + " är under transport till " + stationName + "."));
+    el("currentLocation").textContent = "🚚 Under transport → " + stationName;
+    el("lagerType").textContent = "Under transport";
+    el("transportPanel").classList.remove("active");
+  } catch(err) {
+    el("selectionMessage").className = "message error active";
+    el("selectionMessage").innerHTML = "<strong>Transporten misslyckades.</strong><br>" + escapeHtml(err.message);
+  } finally {
+    ["checkinBtn","checkoutBtn","transportBtn"].forEach(id => el(id).disabled = false);
+  }
+}
+
 async function selectStation(row) {
   const stationName = row["Station"] || row["Station-ID"] || "vald station";
 
@@ -401,6 +479,7 @@ async function selectStation(row) {
 
   el("checkinBtn").disabled = true;
   el("checkoutBtn").disabled = true;
+  el("transportBtn").disabled = true;
 
   try {
     const response = await fetch(API + "/checkin", {
@@ -440,6 +519,7 @@ async function selectStation(row) {
   } finally {
     el("checkinBtn").disabled = false;
     el("checkoutBtn").disabled = false;
+    el("transportBtn").disabled = false;
   }
 }
 
@@ -457,6 +537,7 @@ async function selectVehicle(row, rakel, reg) {
 
   el("checkinBtn").disabled = true;
   el("checkoutBtn").disabled = true;
+  el("transportBtn").disabled = true;
 
   try {
     const response = await fetch(API + "/checkout", {
@@ -496,6 +577,7 @@ async function selectVehicle(row, rakel, reg) {
   } finally {
     el("checkinBtn").disabled = false;
     el("checkoutBtn").disabled = false;
+    el("transportBtn").disabled = false;
   }
 }
 
@@ -604,9 +686,15 @@ function renderHome() {
     const stock = stationStock.filter(m => Number(m.stationId) === Number(station.id));
     const card = document.createElement("div");
     card.className = "overview-card";
+    const levels = (overviewData.stockLevels || []).filter(x => Number(x.stationId) === Number(station.id));
+    const levelHtml = levels.length ? "<div class='level-list'>" + levels.map(x =>
+      "<div class='level-row'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
+      escapeHtml(x.material) + "</span><span class='level-count'>" + escapeHtml(x.actual) +
+      (x.max !== null ? "/" + escapeHtml(x.max) : "") + "</span></div>"
+    ).join("") + "</div>" : "";
     card.innerHTML =
       "<div><strong>" + escapeHtml(station.name) + "</strong><div class='muted small'>" +
-      stock.length + " material i stationslager</div></div>" +
+      stock.length + " material i stationslager</div>" + levelHtml + "</div>" +
       "<button class='mini-button' type='button'>Visa</button>";
     card.querySelector("button").addEventListener("click", () =>
       showMaterialList(station.name, stock)
@@ -621,9 +709,17 @@ function renderHome() {
     const label = [vehicle.rakel, vehicle.registration].filter(Boolean).join(" – ");
     const card = document.createElement("div");
     card.className = "overview-card";
+    const requirements = (overviewData.vehicleRequirements || []).filter(x => Number(x.vehicleId) === Number(vehicle.id));
+    const overallStatus = requirements.length && requirements.every(x => x.status === "green") ? "green" : "red";
+    const reqHtml = requirements.length ? "<div class='level-list'>" + requirements.map(x =>
+      "<div class='level-row'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
+      escapeHtml(x.material) + "</span><span class='level-count'>" + escapeHtml(x.actual) + "/" +
+      escapeHtml(x.required ?? "–") + "</span></div>"
+    ).join("") + "</div>" : "<div class='muted small'>Inga materialkrav registrerade</div>";
     card.innerHTML =
-      "<div><strong>" + escapeHtml(label || "Fordon") + "</strong><div class='muted small'>" +
-      escapeHtml(type) + (type ? " • " : "") + stock.length + " material</div></div>" +
+      "<div><strong><i class='status-dot " + overallStatus + "'></i>" + escapeHtml(label || "Fordon") +
+      "</strong><div class='muted small'>" + escapeHtml(type) + (type ? " • " : "") +
+      stock.length + " material</div>" + reqHtml + "</div>" +
       "<button class='mini-button' type='button'>Visa</button>";
     card.querySelector("button").addEventListener("click", () =>
       showMaterialList(label || "Fordon", stock)
