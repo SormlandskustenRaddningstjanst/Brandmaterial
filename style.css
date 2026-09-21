@@ -92,3 +92,8 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .order-status-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
 .order-status-actions button{padding:7px 9px;font-size:.78rem}
 @media(max-width:760px){.order-columns{grid-template-columns:1fr}}
+
+.excel-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
+.button-link{display:flex;align-items:center;justify-content:center;box-sizing:border-box;text-decoration:none;background:#2a3768;color:#fff;font-weight:700;padding:12px 14px;border:0}
+.button-link:hover{filter:brightness(.95)}
+@media(max-width:760px){.excel-actions{grid-template-columns:1fr}}
