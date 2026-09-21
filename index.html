@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="style.css?v=20260921-orders">
+  <link rel="stylesheet" href="style.css?v=20260921-excel">
 
 </head>
 <body>
@@ -93,6 +93,14 @@
       <div class="primary-actions">
         <button id="addMaterialBtn" class="green" type="button">➕ Lägg till brandmaterial</button>
       </div>
+
+      <div class="excel-actions">
+        <button id="importExcelBtn" type="button">⬆️ IMPORTERA EXCEL</button>
+        <button id="exportExcelBtn" type="button">⬇️ EXPORTERA EXCEL</button>
+        <a class="button-link" href="Brandmaterial_importmall.xlsx" download>📄 LADDA NER MALL</a>
+        <input id="excelFileInput" type="file" accept=".xlsx" hidden>
+      </div>
+      <div id="excelMessage" class="message"></div>
 
       <div class="stats">
         <div class="stat"><strong id="countStations">0</strong><span>Stationer</span></div>
@@ -207,7 +215,8 @@
 
   <div class="footer">Sörmlandskustens räddningstjänst · Brandmaterial</div>
 </main>
-<script src="app.js?v=20260921-orders"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="app.js?v=20260921-excel"></script>
 
 </body>
 </html>
