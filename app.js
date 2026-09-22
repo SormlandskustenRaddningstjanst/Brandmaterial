@@ -811,13 +811,15 @@ let consumablesData = [];
 let showAllConsumables = false;
 let pendingConsumableOrder = null;
 let consumableOrdersData = [];
+let consumableLevelsData = [];
 
 async function startHome() {
   try {
-    const [overview, consumables, consumableOrders] = await Promise.all([apiGet("/overview"), apiGet("/consumables"), apiGet("/consumable-orders")]);
+    const [overview, consumables, consumableOrders, consumableLevels] = await Promise.all([apiGet("/overview"), apiGet("/consumables"), apiGet("/consumable-orders"), apiGet("/consumable-levels")]);
     overviewData = overview;
     consumablesData = Array.isArray(consumables?.items) ? consumables.items : [];
     consumableOrdersData = Array.isArray(consumableOrders?.orders) ? consumableOrders.orders : [];
+    consumableLevelsData = Array.isArray(consumableLevels?.levels) ? consumableLevels.levels : [];
     renderStationSettings();
     renderHome();
   } catch (err) {
@@ -1000,7 +1002,8 @@ function consumableCatalogForStation(station){
   const nykCatalog=(consumablesData||[]).filter(x=>x.active!==false&&isNykopingName(x.station)&&x.orderable===true);
   return nykCatalog.map(source=>{
     const own=(consumablesData||[]).find(x=>x.active!==false&&Number(x.stationId)===Number(station.id)&&String(x.article||"").trim().toLocaleLowerCase("sv-SE")===String(source.article||"").trim().toLocaleLowerCase("sv-SE"));
-    const target=own&&Number(own.target)>0?Number(own.target):Number(source.target||0);
+    const level=(consumableLevelsData||[]).find(l=>Number(l.stationId)===Number(station.id)&&String(l.articleId||"").toUpperCase()===String(source.articleId||"").toUpperCase());
+    const target=level?Number(level.target||0):0;
     return {...source,sourceArticleId:source.articleId,stationId:Number(station.id),station:station.name,balance:own?Number(own.balance||0):0,target,ownArticleId:own?.articleId||"",unit:own?.unit||source.unit||"st"};
   });
 }
