@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260922-forbrukning-lager-v2">
+<link rel="stylesheet" href="style.css?v=20260922-forbrukning-order-v3">
 </head>
 <body>
 <header>
@@ -107,6 +107,11 @@
         <div class="actions consumable-order-actions"><button id="submitConsumableOrderBtn" type="button">SKICKA BESTÄLLNING</button><a id="consumableSupplierLink" class="button" target="_blank" rel="noopener" style="display:none">ÖPPNA BESTÄLLNINGSLÄNK</a></div>
         <div id="consumableOrderMessage" class="message"></div>
       </div>
+      <div id="consumableOrdersCard" class="card consumable-orders-card" style="display:none">
+        <h3>📦 Beställningar från stationer <span id="countConsumableOrders" class="transport-count">0</span></h3>
+        <div class="muted small">Nyköping ser beställande station, beställare, artikel och antal.</div>
+        <div id="consumableOrdersList"></div>
+      </div>
       <div class="order-actions">
         <button id="orderStockBtn" type="button">📦 BESTÄLLNING LAGER</button>
         <button id="orderExerciseBtn" type="button">🎯 BESTÄLLNING ÖVNING</button>
@@ -135,6 +140,6 @@
   </section>
   <div class="footer">Sörmlandskustens räddningstjänst · Brandmaterial</div>
 </main>
-<script src="app.js?v=20260922-forbrukning-lager-v2"></script>
+<script src="app.js?v=20260922-forbrukning-order-v3"></script>
 </body>
 </html>
