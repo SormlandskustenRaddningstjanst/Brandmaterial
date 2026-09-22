@@ -5,3 +5,12 @@ main{max-width:1180px;margin:auto;padding:20px}.toolbar{margin-bottom:14px}.back
 .card{background:white;padding:18px;margin-bottom:18px;box-shadow:0 1px 4px #0001}.register-menu{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px}.register-tile{min-height:145px;border:0;background:#2a3768;color:white;text-align:left;padding:20px;cursor:pointer;font:inherit}.register-tile:hover{transform:translateY(-1px)}.register-tile .icon{display:block;font-size:2rem;margin-bottom:14px}.register-tile strong{display:block;font-size:1.3rem}.register-tile small{display:block;margin-top:5px;opacity:.8}
 .list-head{display:flex;justify-content:space-between;gap:15px;align-items:start}.list-head h3{margin:0;font-size:1.5rem}.muted{color:#687087}.actions{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}button{border:0;background:#2a3768;color:white;padding:10px 14px;font:inherit;font-weight:800;cursor:pointer}.secondary{background:#e7e9ef;color:#2a3768}.search{display:block;font-weight:700;margin-bottom:12px}.search input{width:100%;margin-top:5px;padding:11px;border:1px solid #bbc0ca;font:inherit}.table-wrap{overflow:auto;border:1px solid #d9dce3}table{width:100%;border-collapse:collapse;min-width:700px}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #e2e4e9;white-space:nowrap}th{background:#eef0f5;color:#2a3768}tbody tr:hover{background:#fafbe9}.material-link{color:#2a3768;font-weight:800}.message{display:none;padding:11px;margin:10px 0}.message.active{display:block}.message.error{background:#fee8e8;color:#8a1515}.message.ok{background:#e7f5ea;color:#176b2c}footer{text-align:center;color:#687087;padding:25px 0}
 @media(max-width:720px){.register-menu{grid-template-columns:1fr}.list-head{flex-direction:column}.register-tile{min-height:105px}.header-inner h1{font-size:1.6rem}}
+
+.yellow{background:#fbe216;color:#1f294f}
+.category-panel{background:#f7f8fb;border-left:5px solid #fbe216;padding:16px;margin:12px 0 18px}
+.category-panel label{display:block;font-weight:800;margin-bottom:6px}
+.category-create-row{display:flex;gap:8px;flex-wrap:wrap}
+.category-create-row input{flex:1;min-width:220px;padding:10px;border:1px solid #bbc0ca;font:inherit}
+.category-list{margin-top:12px;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.category-list span{background:#e7e9ef;padding:5px 9px;font-weight:700}
+.vehicle-category-select{min-width:170px;padding:7px;border:1px solid #bbc0ca;background:white;font:inherit}
