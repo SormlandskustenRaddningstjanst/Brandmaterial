@@ -957,7 +957,6 @@ function renderHome() {
       stock.length + " material</div>" + reqHtml + "</div>" +
       "<button class='mini-button vehicle-show-material' type='button'>MATERIALPLAN</button>";
     card.querySelector(".vehicle-show-material").addEventListener("click", () => openVehicleMaterialPlan(vehicle, label));
-    });
     const vehicleExpand = card.querySelector(".overview-expand");
     if (vehicleExpand) vehicleExpand.addEventListener("click", event => {
       event.stopPropagation();
