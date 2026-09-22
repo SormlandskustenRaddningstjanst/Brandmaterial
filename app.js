@@ -907,23 +907,28 @@ function renderHome() {
     const card = document.createElement("div");
     card.className = "overview-card";
     const levels = (overviewData.stockLevels || []).filter(x => Number(x.stationId) === Number(station.id));
-    const levelHtml = levels.length ? "<div class='level-list'>" + levels.map(x =>
-      "<div class='level-row'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
+    const visibleLevels = levels.filter(x => x.status !== "green");
+    const levelRows = levels.map(x =>
+      "<div class='level-row " + (x.status === "green" ? "overview-green-row overview-hidden-green" : "") + "'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
       escapeHtml(x.material) + "</span><span class='level-count'>" + escapeHtml(x.actual) +
-      (x.max !== null ? "/" + escapeHtml(x.max) : "") +
-      " <button class='level-edit-button station-level-edit' type='button' data-level-id='" + escapeHtml(x.id) + "'>✏️</button></span></div>"
-    ).join("") + "</div>" : "";
+      (x.max !== null ? "/" + escapeHtml(x.max) : "") + "</span></div>"
+    ).join("");
+    const levelHtml = levels.length
+      ? "<div class='level-list'>" + levelRows + "</div>" +
+        (levels.some(x => x.status === "green") ? "<button class='overview-expand' type='button'>VISA ALLA (" + levels.length + ")</button>" : "")
+      : "";
     card.innerHTML =
       "<div><strong>" + escapeHtml(station.name) + "</strong><div class='muted small'>" +
       stock.length + " material i stationslager</div>" + levelHtml + "</div>" +
       "<button class='mini-button station-show-material' type='button'>MATERIALPLAN</button>";
     card.querySelector(".station-show-material").addEventListener("click", () => openStationMaterialPlan(station));
-    card.querySelectorAll(".station-level-edit").forEach(btn => {
-      btn.addEventListener("click", event => {
-        event.stopPropagation();
-        const level = levels.find(x => Number(x.id) === Number(btn.dataset.levelId));
-        if (level) editStationLevel(level, station.name);
-      });
+    const stationExpand = card.querySelector(".overview-expand");
+    if (stationExpand) stationExpand.addEventListener("click", event => {
+      event.stopPropagation();
+      const hidden = card.querySelectorAll(".overview-green-row");
+      const expanding = [...hidden].some(row => row.classList.contains("overview-hidden-green"));
+      hidden.forEach(row => row.classList.toggle("overview-hidden-green", !expanding));
+      stationExpand.textContent = expanding ? "DÖLJ GRÖNA" : "VISA ALLA (" + levels.length + ")";
     });
     el("stationOverview").appendChild(card);
   });
@@ -937,24 +942,29 @@ function renderHome() {
     card.className = "overview-card";
     const requirements = (overviewData.vehicleRequirements || []).filter(x => Number(x.vehicleId) === Number(vehicle.id));
     const overallStatus = requirements.length && requirements.every(x => x.status === "green") ? "green" : "red";
-    const reqHtml = requirements.length ? "<div class='level-list'>" + requirements.map(x =>
-      "<div class='level-row'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
+    const reqRows = requirements.map(x =>
+      "<div class='level-row " + (x.status === "green" ? "overview-green-row overview-hidden-green" : "") + "'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
       escapeHtml(x.material) + "</span><span class='level-count'>" + escapeHtml(x.actual) + "/" +
-      escapeHtml(x.required ?? "–") +
-      " <button class='level-edit-button vehicle-level-edit' type='button' data-requirement-id='" + escapeHtml(x.id) + "'>✏️</button></span></div>"
-    ).join("") + "</div>" : "<div class='muted small'>Inga materialkrav registrerade</div>";
+      escapeHtml(x.required ?? "–") + "</span></div>"
+    ).join("");
+    const reqHtml = requirements.length
+      ? "<div class='level-list'>" + reqRows + "</div>" +
+        (requirements.some(x => x.status === "green") ? "<button class='overview-expand' type='button'>VISA ALLA (" + requirements.length + ")</button>" : "")
+      : "<div class='muted small'>Inga materialkrav registrerade</div>";
     card.innerHTML =
       "<div><strong><i class='status-dot " + overallStatus + "'></i>" + escapeHtml(label || "Fordon") +
       "</strong><div class='muted small'>" + escapeHtml(type) + (type ? " • " : "") +
       stock.length + " material</div>" + reqHtml + "</div>" +
       "<button class='mini-button vehicle-show-material' type='button'>MATERIALPLAN</button>";
     card.querySelector(".vehicle-show-material").addEventListener("click", () => openVehicleMaterialPlan(vehicle, label));
-    card.querySelectorAll(".vehicle-level-edit").forEach(btn => {
-      btn.addEventListener("click", event => {
-        event.stopPropagation();
-        const requirement = requirements.find(x => Number(x.id) === Number(btn.dataset.requirementId));
-        if (requirement) editVehicleRequirement(requirement, label || "Fordon");
-      });
+    });
+    const vehicleExpand = card.querySelector(".overview-expand");
+    if (vehicleExpand) vehicleExpand.addEventListener("click", event => {
+      event.stopPropagation();
+      const hidden = card.querySelectorAll(".overview-green-row");
+      const expanding = [...hidden].some(row => row.classList.contains("overview-hidden-green"));
+      hidden.forEach(row => row.classList.toggle("overview-hidden-green", !expanding));
+      vehicleExpand.textContent = expanding ? "DÖLJ GRÖNA" : "VISA ALLA (" + requirements.length + ")";
     });
     el("vehicleOverview").appendChild(card);
   });
