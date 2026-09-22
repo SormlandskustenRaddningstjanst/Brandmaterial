@@ -1,2305 +1,1482 @@
-const BASEROW_API = "https://api.baserow.io/api";
-
-const TABLES = {
-  material: 1207230,
-  events: 1208780,
-  stations: 1208490,
-  vehicles: 1208456,
-  rakel: 1210178,
-  stockLevels: 1212508,
-  vehicleRequirements: 1212522,
-  orders: 1212642,
-  vehicleCategories: 1214956,
-  consumables: 1215172,
-  consumableEvents: 1215199,
-  consumableOrders: 1215368,
-};
-
-const ALLOWED_ORIGIN = "https://sormlandskustenraddningstjanst.github.io";
-
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Content-Type": "application/json; charset=utf-8",
-      "Vary": "Origin",
-    };
-
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders });
-    }
-
-    try {
-      // GET /material/SKRTJ-00003
-      if (request.method === "GET" && url.pathname.startsWith("/material/")) {
-        const materialId = normalizeMaterialId(
-          decodeURIComponent(url.pathname.replace("/material/", ""))
-        );
-
-        if (!isValidMaterialId(materialId)) {
-          return json({ error: "Ogiltigt Material-ID" }, 400, corsHeaders);
-        }
-
-        const material = await findMaterialById(env, materialId);
-
-        if (!material) {
-          return json({ error: "Materialet hittades inte" }, 404, corsHeaders);
-        }
-
-        return json(material, 200, corsHeaders);
-      }
-
-      // GET /consumables
-      // Lista aktiva förbrukningsartiklar för register/lageröversikt.
-      if (request.method === "GET" && url.pathname === "/consumables") {
-        const data = await baserowRequest(
-          env,
-          `/database/rows/table/${TABLES.consumables}/?user_field_names=true&size=200`,
-          { method: "GET" }
-        );
-        const items = data.results
-          .filter(row => row["Aktiv"] === true)
-          .map(consumableFromRow)
-          .map(stripSupplierUnlessNykoping)
-          .sort((a,b) => String(a.article).localeCompare(String(b.article), "sv"));
-        return json({ items }, 200, corsHeaders);
-      }
-
-      // POST /consumable
-      // Skapar en ny förbrukningsartikel och genererar nästa lediga FORB-xxx.
-      if (request.method === "POST" && url.pathname === "/consumable") {
-        if (!isAllowedBrowserOrigin(request)) return json({ error:"Otillåten origin" }, 403, corsHeaders);
-        const body = await readJson(request);
-        const article = String(body?.article || "").trim();
-        const category = String(body?.category || "").trim();
-        const stationId = Number(body?.stationId);
-        const balance = Number(body?.balance ?? 0);
-        const reorderAt = Number(body?.reorderAt ?? 0);
-        const target = Number(body?.target ?? 0);
-        const unit = String(body?.unit || "st").trim();
-        const supplier = String(body?.supplier || "").trim();
-        const supplierArticleNumber = String(body?.supplierArticleNumber || "").trim();
-        const orderUrl = String(body?.orderUrl || "").trim();
-        const contactPerson = String(body?.contactPerson || "").trim();
-        const phone = String(body?.phone || "").trim();
-        const email = String(body?.email || "").trim();
-        const customerNumber = String(body?.customerNumber || "").trim();
-        const agreementNumber = String(body?.agreementNumber || "").trim();
-        const packageSize = Number(body?.packageSize ?? 0);
-        const minimumOrderQuantity = Number(body?.minimumOrderQuantity ?? 0);
-        const orderComment = String(body?.orderComment || "").trim();
-        const usageArea = String(body?.usageArea || "").trim();
-        const comment = String(body?.comment || "").trim();
-
-        if (!article) return json({error:"Artikel måste anges"},400,corsHeaders);
-        if (!category) return json({error:"Kategori måste anges"},400,corsHeaders);
-        if (!isPositiveInteger(stationId)) return json({error:"Ogiltigt station-ID"},400,corsHeaders);
-        if (!unit) return json({error:"Enhet måste anges"},400,corsHeaders);
-        if (![balance,reorderAt,target].every(Number.isInteger) || balance < 0 || reorderAt < 0 || target < 0) return json({error:"Saldo och lagernivåer måste vara heltal 0 eller högre"},400,corsHeaders);
-        if (target < reorderAt) return json({error:"Önskat lager måste vara lika med eller högre än Beställ vid"},400,corsHeaders);
-        if (orderUrl && !/^https?:\/\//i.test(orderUrl)) return json({error:"Beställningslänk måste börja med http:// eller https://"},400,corsHeaders);
-        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({error:"Ogiltig e-postadress"},400,corsHeaders);
-        if (![packageSize,minimumOrderQuantity].every(Number.isInteger) || packageSize < 0 || minimumOrderQuantity < 0) return json({error:"Förpackningsstorlek och minsta beställningsantal måste vara heltal 0 eller högre"},400,corsHeaders);
-
-        const [station, current] = await Promise.all([
-          getRow(env, TABLES.stations, stationId),
-          baserowRequest(env, `/database/rows/table/${TABLES.consumables}/?user_field_names=true&size=200`, {method:"GET"})
-        ]);
-        if (!station) return json({error:"Stationen hittades inte"},404,corsHeaders);
-        if (station["Aktiv"] !== true) return json({error:"Stationen är inte aktiv"},409,corsHeaders);
-        const isNykopingStation = normalizeSwedishName(station["Station"] || station["Station-ID"]) === "nyköping";
-        if (!isNykopingStation) return json({error:"Nya förbrukningsartiklar kan endast läggas upp i Nyköping"},403,corsHeaders);
-
-        const used = new Set(current.results.map(r => normalizeConsumableId(r["Artikel-ID"])).map(id => { const m=/^FORB-(\\d{3,5})$/.exec(id); return m ? Number(m[1]) : null; }).filter(Number.isInteger));
-        let next=1; while(used.has(next)) next++;
-        if(next>99999) return json({error:"Inga fler Artikel-ID kan skapas"},409,corsHeaders);
-        const articleId=`FORB-${String(next).padStart(3,"0")}`;
-
-        const created = await baserowRequest(env, `/database/rows/table/${TABLES.consumables}/?user_field_names=true`, {
-          method:"POST",
-          body:{
-            "Artikel-ID":articleId,"Artikel":article,"Kategori":category,"Station":[stationId],"Saldo":balance,
-            "Beställ vid":reorderAt,"Önskat lager":target,"Enhet":unit,"Leverantör":isNykopingStation?supplier:"",
-            "Artikelnummer":isNykopingStation?supplierArticleNumber:"","Beställningslänk":isNykopingStation?orderUrl:"",
-            "Kontaktperson":isNykopingStation?contactPerson:"","Telefon":isNykopingStation?phone:"","E-post":isNykopingStation?email:"","Kundnummer":isNykopingStation?customerNumber:"",
-            "Avtalsnummer":isNykopingStation?agreementNumber:"","Förpackningsstorlek":packageSize,"Minsta beställningsantal":minimumOrderQuantity,
-            "Beställningskommentar":isNykopingStation?orderComment:"","Användningsområde":usageArea,"Kommentar":comment,"Beställningsbar":false,"Aktiv":true
-          }
-        });
-        return json({success:true,articleId,item:consumableFromRow(created)},201,corsHeaders);
-      }
-
-      // GET /consumable/FORB-001
-      // QR-uppslag av en enskild förbrukningsartikel.
-      if (request.method === "GET" && url.pathname.startsWith("/consumable/")) {
-        const articleId = normalizeConsumableId(
-          decodeURIComponent(url.pathname.replace("/consumable/", ""))
-        );
-        if (!isValidConsumableId(articleId)) {
-          return json({ error: "Ogiltigt Artikel-ID" }, 400, corsHeaders);
-        }
-        const row = await findConsumableById(env, articleId);
-        if (!row) return json({ error: "Förbrukningsartikeln hittades inte" }, 404, corsHeaders);
-        if (row["Aktiv"] !== true) return json({ error: "Förbrukningsartikeln är inte aktiv" }, 409, corsHeaders);
-        return json(stripSupplierUnlessNykoping(consumableFromRow(row)), 200, corsHeaders);
-      }
-
-      // POST /consumable/adjust
-      // Body: { articleId:"FORB-001", change:-10, comment:"" }
-      // Uppdaterar saldo och sparar samtidigt en händelse.
-      if (request.method === "POST" && url.pathname === "/consumable/adjust") {
-        if (!isAllowedBrowserOrigin(request)) {
-          return json({ error: "Otillåten origin" }, 403, corsHeaders);
-        }
-        const body = await readJson(request);
-        const articleId = normalizeConsumableId(body?.articleId);
-        const change = Number(body?.change);
-        const comment = String(body?.comment || "").trim();
-
-        if (!isValidConsumableId(articleId)) {
-          return json({ error: "Ogiltigt Artikel-ID" }, 400, corsHeaders);
-        }
-        if (!Number.isInteger(change) || change === 0) {
-          return json({ error: "Förändring måste vara ett heltal och får inte vara 0" }, 400, corsHeaders);
-        }
-        if (Math.abs(change) > 10000) {
-          return json({ error: "Förändringen är orimligt stor" }, 400, corsHeaders);
-        }
-
-        const row = await findConsumableById(env, articleId);
-        if (!row) return json({ error: "Förbrukningsartikeln hittades inte" }, 404, corsHeaders);
-        if (row["Aktiv"] !== true) return json({ error: "Förbrukningsartikeln är inte aktiv" }, 409, corsHeaders);
-
-        const before = integerOrZero(row["Saldo"]);
-        const after = before + change;
-        if (after < 0) {
-          return json({ error: `Lagret kan inte bli negativt. Aktuellt saldo är ${before}.` }, 409, corsHeaders);
-        }
-
-        const updated = await baserowRequest(
-          env,
-          `/database/rows/table/${TABLES.consumables}/${row.id}/?user_field_names=true`,
-          { method:"PATCH", body:{ "Saldo": after } }
-        );
-
-        const eventType = change < 0 ? "Uttag" : "Påfyllning";
-        let event;
-        try {
-          event = await baserowRequest(
-            env,
-            `/database/rows/table/${TABLES.consumableEvents}/?user_field_names=true`,
-            {
-              method:"POST",
-              body:{
-                "Händelse": `${articleId} ${change > 0 ? "+" : ""}${change}`,
-                "Artikel": [row.id],
-                "Förändring": change,
-                "Saldo före": before,
-                "Saldo efter": after,
-                "Typ": eventType,
-                "Kommentar": comment
-              }
-            }
-          );
-        } catch (eventError) {
-          try {
-            await baserowRequest(
-              env,
-              `/database/rows/table/${TABLES.consumables}/${row.id}/?user_field_names=true`,
-              { method:"PATCH", body:{ "Saldo": before } }
-            );
-          } catch (rollbackError) {
-            console.error("Rollback för förbrukningssaldo misslyckades:", rollbackError);
-            throw new Error(`Händelsen kunde inte sparas och saldot kunde inte återställas. Kontrollera ${articleId} manuellt i Baserow.`);
-          }
-          throw new Error(`Händelsen kunde inte sparas. Saldot återställdes. ${eventError.message}`);
-        }
-
-        const item = consumableFromRow(updated);
-        return json({
-          success:true,
-          action:"consumable-adjust",
-          articleId,
-          change,
-          before,
-          after,
-          eventId:event.id,
-          orderNeeded:item.orderNeeded,
-          orderQuantity:item.orderQuantity,
-          item
-        }, 200, corsHeaders);
-      }
-
-      // GET /stations
-      if (request.method === "GET" && url.pathname === "/stations") {
-        const data = await baserowRequest(
-          env,
-          `/database/rows/table/${TABLES.stations}/?user_field_names=true&size=200`,
-          { method: "GET" }
-        );
-        return json(data.results, 200, corsHeaders);
-      }
-
-      // GET /vehicles
-      if (request.method === "GET" && url.pathname === "/vehicles") {
-        const data = await baserowRequest(
-          env,
-          `/database/rows/table/${TABLES.vehicles}/?user_field_names=true&size=200`,
-          { method: "GET" }
-        );
-        return json(data.results, 200, corsHeaders);
-      }
-
-      // POST /consumable/orderable
-      // Nyköpings styrning av vilka stationsartiklar som får beställas internt.
-      if (request.method === "POST" && url.pathname === "/consumable/orderable") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body=await readJson(request), articleId=normalizeConsumableId(body?.articleId), orderable=body?.orderable===true;
-        if(!isValidConsumableId(articleId)) return json({error:"Ogiltigt Artikel-ID"},400,corsHeaders);
-        const row=await findConsumableById(env,articleId);
-        if(!row) return json({error:"Artikeln hittades inte"},404,corsHeaders);
-        const stationName=Array.isArray(row["Station"])&&row["Station"][0]?.value?String(row["Station"][0].value):"";
-        if(normalizeSwedishName(stationName)!=="nyköping") return json({error:"Beställningsbar styrs på Nyköpings huvudartikel"},409,corsHeaders);
-        await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/${row.id}/?user_field_names=true`,{method:"PATCH",body:{"Beställningsbar":orderable}});
-        return json({success:true,articleId,orderable},200,corsHeaders);
-      }
-
-      // GET /consumable-levels
-      // Nyköping styr önskat/max antal per station för beställningsbara förbrukningsartiklar.
-      // Lagras i Lagernivåer med Material = FORB:<Artikel-ID> för att hållas skilt från Brandmaterial.
-      if (request.method === "GET" && url.pathname === "/consumable-levels") {
-        const [levelData, consumableData] = await Promise.all([
-          baserowRequest(env, `/database/rows/table/${TABLES.stockLevels}/?user_field_names=true&size=200`, {method:"GET"}),
-          baserowRequest(env, `/database/rows/table/${TABLES.consumables}/?user_field_names=true&size=200`, {method:"GET"})
-        ]);
-        const catalog = consumableData.results
-          .filter(r => r["Aktiv"] === true && r["Beställningsbar"] === true && normalizeSwedishName(Array.isArray(r["Station"]) && r["Station"][0]?.value ? r["Station"][0].value : "") === "nyköping")
-          .map(r => ({articleId:normalizeConsumableId(r["Artikel-ID"]), article:String(r["Artikel"]||""), category:String(r["Kategori"]||""), unit:String(r["Enhet"]||"st")}))
-          .filter(x => isValidConsumableId(x.articleId));
-        const levels = levelData.results
-          .filter(r => r["Aktiv"] === true && /^FORB:FORB-\d{3,5}$/i.test(String(r["Material"]||"").trim()))
-          .map(r => ({rowId:r.id, stationId:linkedIds(r["Station"])[0]||null, articleId:normalizeConsumableId(String(r["Material"]||"").replace(/^FORB:/i,"")), target:Math.max(0,integerOrZero(r["Max antal"]))}));
-        return json({catalog,levels},200,corsHeaders);
-      }
-
-      // POST /consumable-level/upsert
-      // Sätter hur många av en artikel en viss station maximalt/önskat ska ha.
-      if (request.method === "POST" && url.pathname === "/consumable-level/upsert") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body=await readJson(request), stationId=Number(body?.stationId), articleId=normalizeConsumableId(body?.articleId), active=body?.active!==false, target=Number(body?.target);
-        if(!isPositiveInteger(stationId)||!isValidConsumableId(articleId)) return json({error:"Station och giltigt Artikel-ID krävs."},400,corsHeaders);
-        if(active&&(!Number.isInteger(target)||target<1)) return json({error:"Önskat antal måste vara ett heltal minst 1."},400,corsHeaders);
-        const station=await getRow(env,TABLES.stations,stationId);
-        if(!station||station["Aktiv"]!==true) return json({error:"Stationen hittades inte eller är inte aktiv."},404,corsHeaders);
-        if(normalizeSwedishName(station["Station"]||station["Station-ID"])==="nyköping") return json({error:"Nyköpings eget lager styrs på huvudartikeln, inte här."},409,corsHeaders);
-        const consumables=await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/?user_field_names=true&size=200`,{method:"GET"});
-        const source=consumables.results.find(r=>normalizeConsumableId(r["Artikel-ID"])===articleId && r["Aktiv"]===true);
-        const sourceStation=source&&Array.isArray(source["Station"])&&source["Station"][0]?.value?String(source["Station"][0].value):"";
-        if(!source||normalizeSwedishName(sourceStation)!=="nyköping"||source["Beställningsbar"]!==true) return json({error:"Artikeln är inte beställningsbar från Nyköping."},409,corsHeaders);
-        const materialKey=`FORB:${articleId}`;
-        const all=await baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/?user_field_names=true&size=200`,{method:"GET"});
-        const matches=all.results.filter(r=>linkedIds(r["Station"])[0]===stationId && String(r["Material"]||"").trim().toUpperCase()===materialKey.toUpperCase());
-        if(matches.length>1) return json({error:"Det finns dubbletter för denna station/artikel i Lagernivåer."},409,corsHeaders);
-        if(!active){
-          if(!matches.length) return json({success:true,unchanged:true},200,corsHeaders);
-          const row=await baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/${matches[0].id}/?user_field_names=true`,{method:"PATCH",body:{"Aktiv":false}});
-          return json({success:true,rowId:row.id,active:false},200,corsHeaders);
-        }
-        const payload={"Namn":`${articleId} – ${String(station["Station"]||station["Station-ID"]||stationId)}`,"Station":[stationId],"Material":materialKey,"Röd under":1,"Grön från":target,"Max antal":target,"Aktiv":true};
-        const row=matches.length
-          ? await baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/${matches[0].id}/?user_field_names=true`,{method:"PATCH",body:payload})
-          : await baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/?user_field_names=true`,{method:"POST",body:payload});
-        return json({success:true,rowId:row.id,stationId,articleId,target,active:true},200,corsHeaders);
-      }
-
-      // GET /consumable-orders
-      // Interna beställningar från stationerna till Nyköpings centrallager.
-      if (request.method === "GET" && url.pathname === "/consumable-orders") {
-        const [data, consumableData] = await Promise.all([
-          baserowRequest(env, `/database/rows/table/${TABLES.consumableOrders}/?user_field_names=true&size=200`, {method:"GET"}),
-          baserowRequest(env, `/database/rows/table/${TABLES.consumables}/?user_field_names=true&size=200`, {method:"GET"})
-        ]);
-        const articleNames = new Map(consumableData.results.map(r => [Number(r.id), String(r["Artikel"] || r["Artikel-ID"] || "")]));
-        const orders = data.results.map(consumableOrderFromRow).map(o => ({...o, article:articleNames.get(Number(o.articleRowId)) || o.article})).sort((a,b)=>b.rowId-a.rowId);
-        return json({orders},200,corsHeaders);
-      }
-
-      // POST /consumable-order
-      // Beställning ur Nyköpings katalog. Nyköpings saldo minskas direkt.
-      // Body: {articleId:<Nyköpings Artikel-ID>, stationId, quantity, orderedBy}
-      if (request.method === "POST" && url.pathname === "/consumable-order") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body=await readJson(request);
-        const sourceArticleId=normalizeConsumableId(body?.articleId);
-        const destinationStationId=Number(body?.stationId);
-        const quantity=Number(body?.quantity);
-        const orderedBy=String(body?.orderedBy||"").trim();
-        const comment=String(body?.comment||"").trim();
-        if(!isValidConsumableId(sourceArticleId)) return json({error:"Ogiltigt Artikel-ID"},400,corsHeaders);
-        if(!isPositiveInteger(destinationStationId)) return json({error:"Ogiltig mottagarstation"},400,corsHeaders);
-        if(!Number.isInteger(quantity)||quantity<1) return json({error:"Antal måste vara minst 1"},400,corsHeaders);
-        if(!orderedBy) return json({error:"Beställare måste anges"},400,corsHeaders);
-
-        const [all, destinationStation, stationRows] = await Promise.all([
-          baserowRequest(env,`/database/rows/table/${TABLES.consumables}/?user_field_names=true&size=200`,{method:"GET"}),
-          getRow(env,TABLES.stations,destinationStationId),
-          baserowRequest(env,`/database/rows/table/${TABLES.stations}/?user_field_names=true&size=200`,{method:"GET"})
-        ]);
-        if(!destinationStation||destinationStation["Aktiv"]!==true) return json({error:"Mottagarstationen hittades inte eller är inte aktiv"},404,corsHeaders);
-        const destinationName=String(destinationStation["Station"]||destinationStation["Station-ID"]||"").trim();
-        if(normalizeSwedishName(destinationName)==="nyköping") return json({error:"Nyköping beställer från leverantör, inte från sig själv"},409,corsHeaders);
-
-        const source=all.results.find(r=>normalizeConsumableId(r["Artikel-ID"])===sourceArticleId);
-        if(!source||source["Aktiv"]!==true) return json({error:"Artikeln hittades inte eller är inte aktiv"},404,corsHeaders);
-        const sourceStationName=Array.isArray(source["Station"])&&source["Station"][0]?.value?String(source["Station"][0].value):"";
-        if(normalizeSwedishName(sourceStationName)!=="nyköping") return json({error:"Beställningen måste utgå från en artikel i Nyköpings huvudlager"},409,corsHeaders);
-        if(source["Beställningsbar"]!==true) return json({error:"Nyköping har inte gjort artikeln beställningsbar"},409,corsHeaders);
-
-        const articleName=String(source["Artikel"]||"").trim();
-        const destination=all.results.find(r=>r["Aktiv"]===true && linkedIds(r["Station"])[0]===destinationStationId && normalizeSwedishName(r["Artikel"])===normalizeSwedishName(articleName));
-        const balance=destination?integerOrZero(destination["Saldo"]):0;
-        const levelRows=await baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/?user_field_names=true&size=200`,{method:"GET"});
-        const level=levelRows.results.find(r=>r["Aktiv"]===true && linkedIds(r["Station"])[0]===destinationStationId && String(r["Material"]||"").trim().toUpperCase()===`FORB:${sourceArticleId}`.toUpperCase());
-        const target=level?Math.max(0,integerOrZero(level["Max antal"])):0;
-        if(target<1) return json({error:"Nyköping har inte ställt in önskat antal för denna artikel på stationen."},409,corsHeaders);
-        const maxAllowed=Math.max(0,target-balance);
-        if(maxAllowed<1) return json({error:`Stationen har redan nått önskat lager (${target}).`},409,corsHeaders);
-        if(quantity>maxAllowed) return json({error:`Du kan högst beställa ${maxAllowed}. Saldo ${balance}, önskat lager ${target}.`},409,corsHeaders);
-
-        const nykBalance=integerOrZero(source["Saldo"]);
-        if(quantity>nykBalance) return json({error:`Nyköping har bara ${nykBalance} ${String(source["Enhet"]||"st")} tillgängligt.`},409,corsHeaders);
-        const nykStation=stationRows.results.find(r=>normalizeSwedishName(r["Station"]||r["Station-ID"])==="nyköping");
-        if(!nykStation) return json({error:"Stationen Nyköping hittades inte"},409,corsHeaders);
-
-        const existing=await baserowRequest(env,`/database/rows/table/${TABLES.consumableOrders}/?user_field_names=true&size=200`,{method:"GET"});
-        const used=new Set(existing.results.map(r=>String(r["Beställnings-ID"]||"").match(/^FB-(\d{5})$/i)).filter(Boolean).map(m=>Number(m[1])));
-        let next=1; while(used.has(next))next++;
-        const orderId=`FB-${String(next).padStart(5,"0")}`;
-
-        const nykAfter=nykBalance-quantity;
-        await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/${source.id}/?user_field_names=true`,{method:"PATCH",body:{"Saldo":nykAfter}});
-        try {
-          await baserowRequest(env,`/database/rows/table/${TABLES.consumableEvents}/?user_field_names=true`,{method:"POST",body:{"Händelse":`${sourceArticleId} -${quantity}`,"Artikel":[source.id],"Förändring":-quantity,"Saldo före":nykBalance,"Saldo efter":nykAfter,"Typ":"Uttag","Kommentar":`${orderId} – reserverat för ${destinationName}`}});
-          const created=await baserowRequest(env,`/database/rows/table/${TABLES.consumableOrders}/?user_field_names=true`,{method:"POST",body:{"Beställnings-ID":orderId,"Artikel":[source.id],"Från station":[nykStation.id],"Till station":[destinationStationId],"Antal":quantity,"Beställare":orderedBy,"Status":"Beställd","Kommentar":comment}});
-          return json({success:true,orderId,rowId:created.id,status:"Beställd",nykopingBalance:nykAfter,maxAllowed},201,corsHeaders);
-        } catch(err) {
-          await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/${source.id}/?user_field_names=true`,{method:"PATCH",body:{"Saldo":nykBalance}});
-          throw err;
-        }
-      }
-
-      // POST /consumable-order/status
-      // Beställd -> Skickad -> Mottagen. Avbruten återför reserverat antal till Nyköping.
-      if (request.method === "POST" && url.pathname === "/consumable-order/status") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body=await readJson(request), rowId=Number(body?.rowId), wanted=String(body?.status||"").trim();
-        if(!isPositiveInteger(rowId)) return json({error:"Ogiltig beställning"},400,corsHeaders);
-        if(!["Skickad","Mottagen","Avbruten"].includes(wanted)) return json({error:"Ogiltig status"},400,corsHeaders);
-        const order=await getRow(env,TABLES.consumableOrders,rowId);
-        if(!order) return json({error:"Beställningen hittades inte"},404,corsHeaders);
-        const current=order["Status"]?.value||order["Status"]||"";
-        if(current===wanted) return json({success:true,rowId,status:current,unchanged:true},200,corsHeaders);
-        const allowed=(current==="Beställd"&&["Skickad","Avbruten"].includes(wanted))||(current==="Skickad"&&["Mottagen","Avbruten"].includes(wanted));
-        if(!allowed) return json({error:`Status kan inte ändras från ${current||"okänd"} till ${wanted}.`},409,corsHeaders);
-        const quantity=integerOrZero(order["Antal"]), sourceRowId=linkedIds(order["Artikel"])[0], destinationStationId=linkedIds(order["Till station"])[0];
-        if(!sourceRowId||!destinationStationId||quantity<1) return json({error:"Beställningen saknar artikel, station eller antal"},409,corsHeaders);
-        const source=await getRow(env,TABLES.consumables,sourceRowId);
-        if(!source) return json({error:"Beställningens Nyköpingsartikel hittades inte"},409,corsHeaders);
-
-        if(wanted==="Mottagen"){
-          const all=await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/?user_field_names=true&size=200`,{method:"GET"});
-          const articleName=String(source["Artikel"]||"").trim();
-          let destination=all.results.find(r=>r["Aktiv"]===true && linkedIds(r["Station"])[0]===destinationStationId && normalizeSwedishName(r["Artikel"])===normalizeSwedishName(articleName));
-          if(!destination){
-            const used=new Set(all.results.map(r=>normalizeConsumableId(r["Artikel-ID"])).map(id=>{const m=/^FORB-(\d{3,5})$/.exec(id);return m?Number(m[1]):null}).filter(Number.isInteger));
-            let next=1;while(used.has(next))next++;
-            if(next>99999) return json({error:"Inga fler Artikel-ID kan skapas"},409,corsHeaders);
-            const newId=`FORB-${String(next).padStart(3,"0")}`;
-            destination=await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/?user_field_names=true`,{method:"POST",body:{
-              "Artikel-ID":newId,"Artikel":articleName,"Kategori":String(source["Kategori"]||""),"Station":[destinationStationId],"Saldo":0,
-              "Beställ vid":integerOrZero(source["Beställ vid"]),"Önskat lager":await consumableTargetForStation(env,destinationStationId,normalizeConsumableId(source["Artikel-ID"])),"Enhet":String(source["Enhet"]||"st"),
-              "Förpackningsstorlek":0,"Minsta beställningsantal":0,"Användningsområde":String(source["Användningsområde"]||""),
-              "Kommentar":"Skapad automatiskt vid mottagen beställning från Nyköping","Beställningsbar":false,"Aktiv":true
-            }});
-          }
-          const before=integerOrZero(destination["Saldo"]), after=before+quantity;
-          const target=await consumableTargetForStation(env,destinationStationId,normalizeConsumableId(source["Artikel-ID"]));
-          if(target>0&&after>target) return json({error:`Mottagning skulle ge ${after}, över önskat lager ${target}.`},409,corsHeaders);
-          await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/${destination.id}/?user_field_names=true`,{method:"PATCH",body:{"Saldo":after}});
-          try{await baserowRequest(env,`/database/rows/table/${TABLES.consumableEvents}/?user_field_names=true`,{method:"POST",body:{"Händelse":`${normalizeConsumableId(destination["Artikel-ID"])} +${quantity}`,"Artikel":[destination.id],"Förändring":quantity,"Saldo före":before,"Saldo efter":after,"Typ":"Påfyllning","Kommentar":`${order["Beställnings-ID"]||"Beställning"} mottagen från Nyköping`}})}catch(err){await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/${destination.id}/?user_field_names=true`,{method:"PATCH",body:{"Saldo":before}});throw err;}
-        } else if(wanted==="Avbruten"){
-          const before=integerOrZero(source["Saldo"]), after=before+quantity;
-          await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/${source.id}/?user_field_names=true`,{method:"PATCH",body:{"Saldo":after}});
-          try{await baserowRequest(env,`/database/rows/table/${TABLES.consumableEvents}/?user_field_names=true`,{method:"POST",body:{"Händelse":`${normalizeConsumableId(source["Artikel-ID"])} +${quantity}`,"Artikel":[source.id],"Förändring":quantity,"Saldo före":before,"Saldo efter":after,"Typ":"Korrigering","Kommentar":`${order["Beställnings-ID"]||"Beställning"} avbruten – återfört till Nyköping`}})}catch(err){await baserowRequest(env,`/database/rows/table/${TABLES.consumables}/${source.id}/?user_field_names=true`,{method:"PATCH",body:{"Saldo":before}});throw err;}
-        }
-        const updated=await baserowRequest(env,`/database/rows/table/${TABLES.consumableOrders}/${rowId}/?user_field_names=true`,{method:"PATCH",body:{"Status":wanted}});
-        return json({success:true,rowId,status:wanted,orderId:updated["Beställnings-ID"]||""},200,corsHeaders);
-      }
-
-      // GET /register-data
-      // Grundregister för den separata Register-sidan.
-      if (request.method === "GET" && url.pathname === "/register-data") {
-        const [stationData, vehicleData, materialData, categoryData, consumableData] = await Promise.all([
-          baserowRequest(env, `/database/rows/table/${TABLES.stations}/?user_field_names=true&size=200`, { method:"GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.vehicles}/?user_field_names=true&size=200`, { method:"GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.material}/?user_field_names=true&size=200`, { method:"GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.vehicleCategories}/?user_field_names=true&size=200`, { method:"GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.consumables}/?user_field_names=true&size=200`, { method:"GET" }),
-        ]);
-
-        const stations = stationData.results.map(row => ({
-          id: row.id,
-          stationNumber: row["Stationsnummer"]?.value || row["Stationsnummer"] || "",
-          name: row["Station"] || row["Station-ID"] || "",
-          active: row["Aktiv"] === true,
-        })).sort((a,b) => String(a.stationNumber).localeCompare(String(b.stationNumber), "sv"));
-
-        const stationNameById = new Map(stations.map(s => [Number(s.id), s.name]));
-        const vehicleCategories = categoryData.results.map(row => ({
-          id: row.id,
-          name: String(row["Kategori"] || "").trim(),
-          active: row["Aktiv"] === true,
-        })).filter(x => x.name).sort((a,b) => a.name.localeCompare(b.name, "sv"));
-        const categoryNameById = new Map(vehicleCategories.map(c => [Number(c.id), c.name]));
-        const vehicles = vehicleData.results.map(row => {
-          const stationId = linkedIds(row["Station"])[0] || null;
-          const rakel = Array.isArray(row["Rakelnummer"]) && row["Rakelnummer"][0]?.value
-            ? String(row["Rakelnummer"][0].value) : "";
-          return {
-            id: row.id,
-            rakel,
-            registration: row["Registreringsnummer"] || "",
-            vehicleId: row["Fordons-ID"] || "",
-            categoryId: linkedIds(row["Fordonskategori"])[0] || null,
-            type: (() => {
-              const categoryId = linkedIds(row["Fordonskategori"])[0] || null;
-              if (categoryId) {
-                const linkedValue = Array.isArray(row["Fordonskategori"])
-                  ? row["Fordonskategori"][0]?.value
-                  : row["Fordonskategori"]?.value;
-                return categoryNameById.get(Number(categoryId)) || String(linkedValue || "").trim();
-              }
-              return row["Fordonstyp"]?.value || row["Fordonstyp"] || "";
-            })(),
-            stationId,
-            station: stationId ? (stationNameById.get(Number(stationId)) || "") : "",
-            active: row["Aktiv"] === true,
-          };
-        }).sort((a,b) => String(a.rakel).localeCompare(String(b.rakel), "sv"));
-
-        const vehicleById = new Map(vehicles.map(v => [Number(v.id), v]));
-        const material = materialData.results.map(row => {
-          const stationId = linkedIds(row["Station"])[0] || null;
-          const vehicleId = linkedIds(row["Registreringsnummer"])[0] || null;
-          const vehicle = vehicleId ? vehicleById.get(Number(vehicleId)) : null;
-          return {
-            rowId: row.id,
-            materialId: normalizeMaterialId(row["Material-ID"]),
-            material: row["Material"] || "",
-            category: row["Kategori"]?.value || row["Kategori"] || "",
-            station: stationId ? (stationNameById.get(Number(stationId)) || "") : "",
-            rakel: Array.isArray(row["Rakelnummer"]) && row["Rakelnummer"][0]?.value ? String(row["Rakelnummer"][0].value) : (vehicle?.rakel || ""),
-            registration: vehicle?.registration || "",
-            comment: row["Kommentar"] || "",
-            active: row["Aktiv"] === true,
-            transportStatus: row["Transportstatus"]?.value || row["Transportstatus"] || "",
-            transportDestination: Array.isArray(row["Transport till station"]) && row["Transport till station"][0]?.value
-              ? String(row["Transport till station"][0].value) : "",
-          };
-        }).sort((a,b) => String(a.materialId).localeCompare(String(b.materialId), "sv"));
-
-        const consumables = consumableData.results
-          .filter(row => row["Aktiv"] === true)
-          .map(consumableFromRow)
-          .map(stripSupplierUnlessNykoping)
-          .sort((a,b) => String(a.article).localeCompare(String(b.article), "sv"));
-
-        return json({ stations, vehicles, material, vehicleCategories, consumables }, 200, corsHeaders);
-      }
-
-      // POST /vehicle-categories
-      // Skapar en ny fordonskategori. Namn jämförs utan hänsyn till stora/små bokstäver.
-      if (request.method === "POST" && url.pathname === "/vehicle-categories") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body = await readJson(request);
-        const name = String(body?.name || "").trim();
-        if (!name) return json({error:"Kategorinamn krävs."},400,corsHeaders);
-        if (name.length > 100) return json({error:"Kategorinamnet är för långt."},400,corsHeaders);
-
-        const current = await baserowRequest(env, `/database/rows/table/${TABLES.vehicleCategories}/?user_field_names=true&size=200`, {method:"GET"});
-        const norm = s => String(s || "").trim().toLocaleLowerCase("sv-SE");
-        const existing = current.results.find(r => norm(r["Kategori"]) === norm(name));
-        if (existing) {
-          if (existing["Aktiv"] !== true) {
-            const updated = await baserowRequest(env, `/database/rows/table/${TABLES.vehicleCategories}/${existing.id}/?user_field_names=true`, {method:"PATCH",body:{"Aktiv":true}});
-            return json({success:true,created:false,reactivated:true,category:{id:updated.id,name:updated["Kategori"] || name,active:true}},200,corsHeaders);
-          }
-          return json({success:true,created:false,category:{id:existing.id,name:existing["Kategori"] || name,active:true}},200,corsHeaders);
-        }
-
-        const created = await baserowRequest(env, `/database/rows/table/${TABLES.vehicleCategories}/?user_field_names=true`, {
-          method:"POST", body:{"Kategori":name,"Aktiv":true}
-        });
-        return json({success:true,created:true,category:{id:created.id,name:created["Kategori"] || name,active:true}},201,corsHeaders);
-      }
-
-      // POST /vehicle/category
-      // Tilldelar en kategori till ett befintligt fordon.
-      if (request.method === "POST" && url.pathname === "/vehicle/category") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body = await readJson(request);
-        const vehicleId = Number(body?.vehicleId);
-        const categoryId = Number(body?.categoryId);
-        if (!isPositiveInteger(vehicleId) || !isPositiveInteger(categoryId)) return json({error:"Fordon och kategori krävs."},400,corsHeaders);
-        const [vehicle, category] = await Promise.all([
-          getRow(env, TABLES.vehicles, vehicleId),
-          getRow(env, TABLES.vehicleCategories, categoryId),
-        ]);
-        if (!vehicle) return json({error:"Fordonet hittades inte."},404,corsHeaders);
-        if (!category || category["Aktiv"] !== true) return json({error:"Kategorin finns inte eller är inte aktiv."},409,corsHeaders);
-        const updated = await baserowRequest(env, `/database/rows/table/${TABLES.vehicles}/${vehicleId}/?user_field_names=true`, {
-          method:"PATCH", body:{"Fordonskategori":[categoryId]}
-        });
-        return json({success:true,vehicleId,categoryId,row:updated},200,corsHeaders);
-      }
-
-      // POST /stations/import
-      if (request.method === "POST" && url.pathname === "/stations/import") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body = await readJson(request);
-        const rows = Array.isArray(body?.rows) ? body.rows : [];
-        if (!rows.length) return json({error:"Importfilen innehåller inga stationer."},400,corsHeaders);
-
-        const current = await baserowRequest(env, `/database/rows/table/${TABLES.stations}/?user_field_names=true&size=200`, {method:"GET"});
-        const byNumber = new Map(), byName = new Map();
-        for (const r of current.results) {
-          const no = String(r["Stationsnummer"]?.value || r["Stationsnummer"] || "").trim().toUpperCase();
-          const name = String(r["Station"] || "").trim().toLocaleLowerCase("sv-SE");
-          if (no) byNumber.set(no, r);
-          if (name) byName.set(name, r);
-        }
-
-        const seen = new Set(), errors = [], prepared = [];
-        for (let i=0;i<rows.length;i++) {
-          const src = rows[i] || {}, excelRow = Number(src.__row || i+2);
-          const stationNumber = String(src["Stationsnummer"] || "").trim();
-          const name = String(src["Station"] || "").trim();
-          if (!stationNumber) { errors.push(`Rad ${excelRow}: Stationsnummer saknas.`); continue; }
-          const key = stationNumber.toUpperCase();
-          if (seen.has(key)) { errors.push(`Rad ${excelRow}: Stationsnummer ${stationNumber} förekommer flera gånger.`); continue; }
-          seen.add(key);
-          let existing = byNumber.get(key) || (name ? byName.get(name.toLocaleLowerCase("sv-SE")) : null) || null;
-          if (!existing && !name) { errors.push(`Rad ${excelRow}: ny station kräver Station.`); continue; }
-          const patch = {"Stationsnummer": stationNumber};
-          if (name) patch["Station"] = name;
-          if (src["Aktiv"] !== undefined && String(src["Aktiv"]).trim() !== "") {
-            const v=String(src["Aktiv"]).trim().toLowerCase();
-            patch["Aktiv"] = src["Aktiv"] === true || ["true","sant","ja","1"].includes(v);
-          }
-          prepared.push({stationNumber, existing, patch});
-        }
-        if (errors.length) return json({success:false,errors},400,corsHeaders);
-
-        let newCount=0, updatedCount=0;
-        for (const item of prepared) {
-          if (item.existing) {
-            await baserowRequest(env, `/database/rows/table/${TABLES.stations}/${item.existing.id}/?user_field_names=true`, {method:"PATCH",body:item.patch});
-            updatedCount++;
-          } else {
-            await baserowRequest(env, `/database/rows/table/${TABLES.stations}/?user_field_names=true`, {method:"POST",body:{"Aktiv":true,...item.patch}});
-            newCount++;
-          }
-        }
-        return json({success:true,newCount,updatedCount},200,corsHeaders);
-      }
-
-      // POST /vehicles/import
-      // Batchimport för att hålla nere antalet Cloudflare-subrequests.
-      // Saknade fordonskategorier och Rakelnummer skapas först i batch,
-      // därefter skapas/uppdateras fordonen i batch.
-      if (request.method === "POST" && url.pathname === "/vehicles/import") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body = await readJson(request);
-        const rows = Array.isArray(body?.rows) ? body.rows : [];
-        if (!rows.length) return json({error:"Importfilen innehåller inga fordon."},400,corsHeaders);
-        if (rows.length > 200) return json({error:"Max 200 fordon per import."},400,corsHeaders);
-
-        const [vehicleData, stationData, rakelData, categoryData] = await Promise.all([
-          baserowRequest(env, `/database/rows/table/${TABLES.vehicles}/?user_field_names=true&size=200`, {method:"GET"}),
-          baserowRequest(env, `/database/rows/table/${TABLES.stations}/?user_field_names=true&size=200`, {method:"GET"}),
-          baserowRequest(env, `/database/rows/table/${TABLES.rakel}/?user_field_names=true&size=200`, {method:"GET"}),
-          baserowRequest(env, `/database/rows/table/${TABLES.vehicleCategories}/?user_field_names=true&size=200`, {method:"GET"}),
-        ]);
-
-        const vehicleByReg = new Map();
-        for (const v of vehicleData.results) {
-          const reg=String(v["Registreringsnummer"]||"").trim().toUpperCase();
-          if (reg) vehicleByReg.set(reg,v);
-        }
-
-        const stationByName = new Map(), stationByNumber = new Map();
-        for (const s of stationData.results) {
-          const name=String(s["Station"]||"").trim().toLocaleLowerCase("sv-SE");
-          const no=String(s["Stationsnummer"]?.value||s["Stationsnummer"]||"").trim().toUpperCase();
-          if(name) stationByName.set(name,s);
-          if(no) stationByNumber.set(no,s);
-        }
-
-        const rakelByValue = new Map();
-        for (const r of rakelData.results) {
-          const val=String(r["Name"]||r["Rakelnummer"]||r["Rakel"]||"").trim();
-          if(val) rakelByValue.set(val,r);
-        }
-
-        const categoryByName = new Map();
-        for (const c of categoryData.results) {
-          const name=String(c["Kategori"]||"").trim();
-          if(name) categoryByName.set(name.toLocaleLowerCase("sv-SE"),c);
-        }
-
-        const seenReg=new Set(), seenRakel=new Set(), errors=[], prepared=[];
-        for(let i=0;i<rows.length;i++){
-          const src=rows[i]||{}, excelRow=Number(src.__row||i+2);
-          const rakel=String(src["Rakelnummer"]||"").trim();
-          const reg=String(src["Registreringsnummer"]||"").trim().toUpperCase();
-
-          if(!rakel) { errors.push(`Rad ${excelRow}: Rakelnummer saknas.`); continue; }
-          if(!reg) { errors.push(`Rad ${excelRow}: Registreringsnummer saknas.`); continue; }
-          if(seenReg.has(reg)) { errors.push(`Rad ${excelRow}: registreringsnummer ${reg} förekommer flera gånger.`); continue; }
-          if(seenRakel.has(rakel)) { errors.push(`Rad ${excelRow}: Rakelnummer ${rakel} förekommer flera gånger.`); continue; }
-          seenReg.add(reg); seenRakel.add(rakel);
-
-          let station=null;
-          const stationValue=String(src["Station"]||"").trim();
-          if(stationValue) {
-            station=stationByNumber.get(stationValue.toUpperCase()) ||
-                    stationByName.get(stationValue.toLocaleLowerCase("sv-SE")) || null;
-            if(!station) errors.push(`Rad ${excelRow}: station "${stationValue}" hittades inte.`);
-          }
-
-          const categoryName=String(src["Fordonskategori"]||src["Fordonstyp"]||"").trim();
-          prepared.push({
-            excelRow,rakel,reg,
-            existing:vehicleByReg.get(reg)||null,
-            station,
-            categoryName,
-            src
-          });
-        }
-        if(errors.length) return json({success:false,errors},400,corsHeaders);
-
-        // 1. Skapa saknade kategorier och återaktivera befintliga kategorier som används i importen.
-        // Register-sidan visar bara aktiva kategorier, därför måste även äldre/inaktiva poster aktiveras.
-        const missingCategoryNames=[];
-        const missingCategoryKeys=new Set();
-        const categoriesToReactivate=new Map();
-
-        for(const item of prepared){
-          if(!item.categoryName) continue;
-          const key=item.categoryName.toLocaleLowerCase("sv-SE");
-          const existingCategory=categoryByName.get(key);
-
-          if(!existingCategory && !missingCategoryKeys.has(key)){
-            missingCategoryKeys.add(key);
-            missingCategoryNames.push(item.categoryName);
-          } else if(existingCategory && existingCategory["Aktiv"] !== true){
-            categoriesToReactivate.set(existingCategory.id, existingCategory);
-          }
-        }
-
-        let createdCategoryCount=0, reactivatedCategoryCount=0;
-
-        if(missingCategoryNames.length){
-          const result=await baserowRequest(
-            env,
-            `/database/rows/table/${TABLES.vehicleCategories}/batch/?user_field_names=true`,
-            {
-              method:"POST",
-              body:{items:missingCategoryNames.map(name=>({"Kategori":name,"Aktiv":true}))}
-            }
-          );
-          const created=Array.isArray(result?.items)?result.items:[];
-          for(const row of created){
-            const name=String(row["Kategori"]||"").trim();
-            if(name) categoryByName.set(name.toLocaleLowerCase("sv-SE"),row);
-          }
-          createdCategoryCount=created.length;
-        }
-
-        if(categoriesToReactivate.size){
-          const result=await baserowRequest(
-            env,
-            `/database/rows/table/${TABLES.vehicleCategories}/batch/?user_field_names=true`,
-            {
-              method:"PATCH",
-              body:{items:[...categoriesToReactivate.values()].map(row=>({id:row.id,"Aktiv":true}))}
-            }
-          );
-          const updated=Array.isArray(result?.items)?result.items:[];
-          for(const row of updated){
-            const name=String(row["Kategori"]||"").trim();
-            if(name) categoryByName.set(name.toLocaleLowerCase("sv-SE"),row);
-          }
-          reactivatedCategoryCount=updated.length;
-        }
-
-        // 2. Skapa alla saknade Rakelnummer i ETT Baserow-anrop.
-        const missingRakelValues=[];
-        const missingRakelSet=new Set();
-        for(const item of prepared){
-          if(!rakelByValue.has(item.rakel) && !missingRakelSet.has(item.rakel)){
-            missingRakelSet.add(item.rakel);
-            missingRakelValues.push(item.rakel);
-          }
-        }
-
-        let createdRakelCount=0;
-        if(missingRakelValues.length){
-          const result=await baserowRequest(
-            env,
-            `/database/rows/table/${TABLES.rakel}/batch/?user_field_names=true`,
-            {
-              method:"POST",
-              body:{items:missingRakelValues.map(value=>({"Name":value}))}
-            }
-          );
-          const created=Array.isArray(result?.items)?result.items:[];
-          for(const row of created){
-            const value=String(row["Name"]||row["Rakelnummer"]||row["Rakel"]||"").trim();
-            if(value) rakelByValue.set(value,row);
-          }
-          createdRakelCount=created.length;
-        }
-
-        // Säkerhetskontroll innan fordon skrivs.
-        const relationErrors=[];
-        for(const item of prepared){
-          if(!rakelByValue.get(item.rakel)) relationErrors.push(`Rakelnummer ${item.rakel} kunde inte skapas/hittas.`);
-          if(item.categoryName && !categoryByName.get(item.categoryName.toLocaleLowerCase("sv-SE"))){
-            relationErrors.push(`Fordonskategori "${item.categoryName}" kunde inte skapas/hittas.`);
-          }
-        }
-        if(relationErrors.length) return json({success:false,errors:relationErrors},500,corsHeaders);
-
-        // 3. Bygg fordonsrader och skapa/uppdatera i högst TVÅ Baserow-anrop.
-        const createItems=[], updateItems=[];
-        for(const item of prepared){
-          const rakelRow=rakelByValue.get(item.rakel);
-          const category=item.categoryName
-            ? categoryByName.get(item.categoryName.toLocaleLowerCase("sv-SE"))
-            : null;
-
-          const patch={
-            "Registreringsnummer":item.reg,
-            "Rakelnummer":[rakelRow.id],
-          };
-          if(category) patch["Fordonskategori"]=[category.id];
-          if(item.station) patch["Station"]=[item.station.id];
-
-          if(item.src["Aktiv"] !== undefined && String(item.src["Aktiv"]).trim() !== ""){
-            const v=String(item.src["Aktiv"]).trim().toLowerCase();
-            patch["Aktiv"]=item.src["Aktiv"]===true || ["true","sant","ja","1"].includes(v);
-          }
-
-          if(item.existing) updateItems.push({id:item.existing.id,...patch});
-          else createItems.push({"Aktiv":true,...patch});
-        }
-
-        if(updateItems.length){
-          await baserowRequest(
-            env,
-            `/database/rows/table/${TABLES.vehicles}/batch/?user_field_names=true`,
-            {method:"PATCH",body:{items:updateItems}}
-          );
-        }
-
-        if(createItems.length){
-          await baserowRequest(
-            env,
-            `/database/rows/table/${TABLES.vehicles}/batch/?user_field_names=true`,
-            {method:"POST",body:{items:createItems}}
-          );
-        }
-
-        return json({
-          success:true,
-          newCount:createItems.length,
-          updatedCount:updateItems.length,
-          createdRakelCount,
-          createdCategoryCount,
-          reactivatedCategoryCount
-        },200,corsHeaders);
-      }
-
-      // GET /overview
-      // Egen lageroversikt for GitHub-sidan. Baserow visas inte for anvandaren.
-      if (request.method === "GET" && url.pathname === "/overview") {
-        const [materialData, stationData, vehicleData, stockLevelData, vehicleRequirementData] = await Promise.all([
-          baserowRequest(env, `/database/rows/table/${TABLES.material}/?user_field_names=true&size=200`, { method: "GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.stations}/?user_field_names=true&size=200`, { method: "GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.vehicles}/?user_field_names=true&size=200`, { method: "GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.stockLevels}/?user_field_names=true&size=200`, { method: "GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.vehicleRequirements}/?user_field_names=true&size=200`, { method: "GET" }),
-        ]);
-
-        const stations = stationData.results
-          .filter((row) => row["Aktiv"] === true)
-          .map((row) => ({
-            id: row.id,
-            name: row["Station"] || row["Station-ID"] || `Station ${row.id}`,
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name, "sv"));
-
-        const vehicles = vehicleData.results
-          .filter((row) => row["Aktiv"] === true)
-          .map((row) => {
-            const stationIds = linkedIds(row["Station"]);
-            const rakel = Array.isArray(row["Rakelnummer"]) && row["Rakelnummer"][0]?.value
-              ? String(row["Rakelnummer"][0].value) : "";
-            return {
-              id: row.id,
-              stationId: stationIds.length === 1 ? stationIds[0] : null,
-              rakel,
-              registration: row["Registreringsnummer"] || row["Fordons-ID"] || `Fordon ${row.id}`,
-              type: row["Fordonstyp"] || "",
-            };
-          });
-
-        const material = materialData.results
-          .filter((row) => row["Aktiv"] === true)
-          .map((row) => {
-            const stationIds = linkedIds(row["Station"]);
-            const vehicleIds = linkedIds(row["Registreringsnummer"]);
-            const rakel = Array.isArray(row["Rakelnummer"]) && row["Rakelnummer"][0]?.value
-              ? String(row["Rakelnummer"][0].value) : "";
-            return {
-              rowId: row.id,
-              materialId: normalizeMaterialId(row["Material-ID"]),
-              material: row["Material"] || "",
-              category: row["Kategori"] && typeof row["Kategori"] === "object"
-                ? row["Kategori"].value || "" : row["Kategori"] || "",
-              comment: row["Kommentar"] || "",
-              storageType: String(row["Transportstatus"]?.value || row["Transportstatus"] || "") === "Under transport"
-                ? "Transport"
-                : (row["Lagertyp"] || ""),
-              stationId: stationIds.length === 1 ? stationIds[0] : null,
-              vehicleId: vehicleIds.length === 1 ? vehicleIds[0] : null,
-              rakel,
-              transportStatus: row["Transportstatus"]?.value || row["Transportstatus"] || "",
-              transportDestinationId: linkedIds(row["Transport till station"])[0] || null,
-              transportDestination: Array.isArray(row["Transport till station"]) && row["Transport till station"][0]?.value
-                ? String(row["Transport till station"][0].value)
-                : "",
-            };
-          });
-
-        const stockLevels = stockLevelData.results
-          .filter((row) => row["Aktiv"] === true)
-          .map((row) => {
-            const stationIds = linkedIds(row["Station"]);
-            const materialName = String(row["Material"] || "").trim();
-            const redBelow = numberOrNull(row["Röd under"]);
-            const greenFrom = numberOrNull(row["Grön från"]);
-            const max = numberOrNull(row["Max antal"]);
-            const stationId = stationIds.length === 1 ? stationIds[0] : null;
-            const actual = material.filter((x) =>
-              x.storageType === "Stationslager" &&
-              x.stationId === stationId &&
-              sameMaterialName(x.material, materialName)
-            ).length;
-
-            return {
-              id: row.id,
-              name: row["Namn"] || "",
-              stationId,
-              material: materialName,
-              redBelow,
-              greenFrom,
-              max,
-              actual,
-              status: stationStockStatus(actual, redBelow, greenFrom, max),
-            };
-          });
-
-        const vehicleRequirements = vehicleRequirementData.results
-          .filter((row) => row["Aktiv"] === true)
-          .map((row) => {
-            const vehicleIds = linkedIds(row["Fordon"]);
-            const vehicleId = vehicleIds.length === 1 ? vehicleIds[0] : null;
-            const materialName = String(row["Material"] || "").trim();
-            const required = numberOrNull(row["Kravantal"]);
-            const actual = material.filter((x) =>
-              x.storageType === "Fordon" &&
-              x.vehicleId === vehicleId &&
-              sameMaterialName(x.material, materialName)
-            ).length;
-
-            return {
-              id: row.id,
-              name: row["Namn"] || "",
-              vehicleId,
-              material: materialName,
-              required,
-              actual,
-              status: required !== null && actual === required ? "green" : "red",
-            };
-          });
-
-        return json({
-          stations,
-          vehicles,
-          material,
-          stockLevels,
-          vehicleRequirements,
-          totals: {
-            material: material.length,
-            stationStorage: material.filter((x) => x.storageType === "Stationslager").length,
-            vehicles: material.filter((x) => x.storageType === "Fordon").length,
-            missingPlacement: material.filter((x) => x.storageType !== "Stationslager" && x.storageType !== "Fordon").length,
-          },
-        }, 200, corsHeaders);
-      }
-
-      // POST /material
-      // Skapar nytt aktivt brandmaterial direkt i ett stationslager.
-      // Material-ID skapas på serversidan som nästa lediga SKRTJ-xxxxx.
-      if (request.method === "POST" && url.pathname === "/material") {
-        if (!isAllowedBrowserOrigin(request)) {
-          return json({ error: "Otillåten origin" }, 403, corsHeaders);
-        }
-
-        const body = await readJson(request);
-        const materialName = String(body?.material || "").trim();
-        const comment = String(body?.comment || "").trim();
-        const stationId = Number(body?.stationId);
-        const category = body?.category;
-
-        if (!materialName) {
-          return json({ error: "Material måste anges" }, 400, corsHeaders);
-        }
-
-        if (!isPositiveInteger(stationId)) {
-          return json({ error: "Ogiltigt station-ID" }, 400, corsHeaders);
-        }
-
-        if (
-          category === undefined ||
-          category === null ||
-          (typeof category === "string" && !category.trim())
-        ) {
-          return json({ error: "Kategori måste anges" }, 400, corsHeaders);
-        }
-
-        const station = await getRow(env, TABLES.stations, stationId);
-        if (!station) {
-          return json({ error: "Stationen hittades inte" }, 404, corsHeaders);
-        }
-        if (station["Aktiv"] !== true) {
-          return json({ error: "Stationen är inte aktiv" }, 409, corsHeaders);
-        }
-
-        const materialData = await baserowRequest(
-          env,
-          `/database/rows/table/${TABLES.material}/?user_field_names=true&size=200`,
-          { method: "GET" }
-        );
-
-        const usedNumbers = new Set(
-          materialData.results
-            .map((row) => normalizeMaterialId(row["Material-ID"]))
-            .map((id) => {
-              const match = /^SKRTJ-(\d{5})$/.exec(id);
-              return match ? Number(match[1]) : null;
-            })
-            .filter((n) => Number.isInteger(n))
-        );
-
-        let nextNumber = 1;
-        while (usedNumbers.has(nextNumber)) nextNumber += 1;
-
-        if (nextNumber > 99999) {
-          return json({ error: "Inga fler Material-ID kan skapas" }, 409, corsHeaders);
-        }
-
-        const materialId = `SKRTJ-${String(nextNumber).padStart(5, "0")}`;
-        const stationName =
-          station["Station"] || station["Station-ID"] || `Station ${stationId}`;
-
-        const createBody = {
-          "Material-ID": materialId,
-          "Material": materialName,
-          "Kommentar": comment,
-          "Aktiv": true,
-          "Station": [stationId],
-          "Rakelnummer": [],
-          "Registreringsnummer": [],
-        };
-
-        // Kategori kan skickas som Baserow-option-id eller som ett textvärde.
-        createBody["Kategori"] =
-          typeof category === "number" ? category : String(category).trim();
-
-        const created = await baserowRequest(
-          env,
-          `/database/rows/table/${TABLES.material}/?user_field_names=true`,
-          {
-            method: "POST",
-            body: createBody,
-          }
-        );
-
-        return json(
-          {
-            success: true,
-            action: "create-material",
-            materialId,
-            materialRowId: created.id,
-            stationId,
-            station: stationName,
-            message: `${materialId} har skapats och lagts i ${stationName}s stationslager.`,
-            material: created,
-          },
-          201,
-          corsHeaders
-        );
-      }
-
-      // POST /checkin
-      if (request.method === "POST" && url.pathname === "/checkin") {
-        if (!isAllowedBrowserOrigin(request)) {
-          return json({ error: "Otillåten origin" }, 403, corsHeaders);
-        }
-
-        const body = await readJson(request);
-        const materialId = normalizeMaterialId(body?.materialId);
-        const stationId = Number(body?.stationId);
-
-        if (!isValidMaterialId(materialId)) {
-          return json({ error: "Ogiltigt Material-ID" }, 400, corsHeaders);
-        }
-
-        if (!isPositiveInteger(stationId)) {
-          return json({ error: "Ogiltigt station-ID" }, 400, corsHeaders);
-        }
-
-        const material = await findMaterialById(env, materialId);
-        if (!material) {
-          return json({ error: "Materialet hittades inte" }, 404, corsHeaders);
-        }
-        if (material["Aktiv"] !== true) {
-          return json({ error: "Materialet är inte aktivt" }, 409, corsHeaders);
-        }
-
-        const station = await getRow(env, TABLES.stations, stationId);
-        if (!station) {
-          return json({ error: "Stationen hittades inte" }, 404, corsHeaders);
-        }
-        if (station["Aktiv"] !== true) {
-          return json({ error: "Stationen är inte aktiv" }, 409, corsHeaders);
-        }
-
-        const stationName =
-          station["Station"] || station["Station-ID"] || `Station ${stationId}`;
-
-        const previousPlacement = placementFromMaterial(material);
-
-        const updatedMaterial = await updateMaterialPlacement(
-          env,
-          material.id,
-          {
-            Station: [stationId],
-            Rakelnummer: [],
-            Registreringsnummer: [],
-            Transportstatus: "Ingen transport",
-            "Transport till station": [],
-          }
-        );
-
-        let event;
-        try {
-          event = await createEvent(env, {
-            Material: [material.id],
-            "Händelsetyp": "Incheckning",
-            Station: [stationId],
-            Fordon: [],
-            Kommentar: `QR-incheckning till ${stationName}`,
-            Status: "Godkänd",
-          });
-        } catch (eventError) {
-          await rollbackPlacementOrThrow(
-            env,
-            material.id,
-            previousPlacement,
-            materialId,
-            eventError
-          );
-        }
-
-        return json(
-          {
-            success: true,
-            action: "checkin",
-            materialId,
-            materialRowId: material.id,
-            stationId,
-            station: stationName,
-            eventId: event.id,
-            message: `${materialId} är incheckat på ${stationName}.`,
-            material: updatedMaterial,
-          },
-          200,
-          corsHeaders
-        );
-      }
-
-      // POST /checkout
-      // Body:
-      // {
-      //   "materialId": "SKRTJ-00003",
-      //   "vehicleId": 1
-      // }
-      if (request.method === "POST" && url.pathname === "/checkout") {
-        if (!isAllowedBrowserOrigin(request)) {
-          return json({ error: "Otillåten origin" }, 403, corsHeaders);
-        }
-
-        const body = await readJson(request);
-        const materialId = normalizeMaterialId(body?.materialId);
-        const vehicleId = Number(body?.vehicleId);
-
-        if (!isValidMaterialId(materialId)) {
-          return json({ error: "Ogiltigt Material-ID" }, 400, corsHeaders);
-        }
-
-        if (!isPositiveInteger(vehicleId)) {
-          return json({ error: "Ogiltigt fordons-ID" }, 400, corsHeaders);
-        }
-
-        const material = await findMaterialById(env, materialId);
-        if (!material) {
-          return json({ error: "Materialet hittades inte" }, 404, corsHeaders);
-        }
-        if (material["Aktiv"] !== true) {
-          return json({ error: "Materialet är inte aktivt" }, 409, corsHeaders);
-        }
-
-        // Verksamhetsregel:
-        // Material måste först ligga i ett stationslager.
-        const materialStationIds = linkedIds(material["Station"]);
-        const materialRakelIds = linkedIds(material["Rakelnummer"]);
-        const materialVehicleIds = linkedIds(material["Registreringsnummer"]);
-
-        if (
-          material["Lagertyp"] !== "Stationslager" ||
-          materialStationIds.length !== 1 ||
-          materialRakelIds.length !== 0 ||
-          materialVehicleIds.length !== 0
-        ) {
-          return json(
-            {
-              error: "Materialet måste vara incheckat på exakt ett stationslager före utcheckning",
-            },
-            409,
-            corsHeaders
-          );
-        }
-
-        const stationId = materialStationIds[0];
-
-        const vehicle = await getRow(env, TABLES.vehicles, vehicleId);
-        if (!vehicle) {
-          return json({ error: "Fordonet hittades inte" }, 404, corsHeaders);
-        }
-        if (vehicle["Aktiv"] !== true) {
-          return json({ error: "Fordonet är inte aktivt" }, 409, corsHeaders);
-        }
-
-        // Fordonet måste tillhöra samma station som materialet.
-        const vehicleStationIds = linkedIds(vehicle["Station"]);
-        if (
-          vehicleStationIds.length !== 1 ||
-          vehicleStationIds[0] !== stationId
-        ) {
-          return json(
-            {
-              error: "Fordonet tillhör inte samma station som materialet",
-            },
-            409,
-            corsHeaders
-          );
-        }
-
-        // Fordonet måste ha exakt ett Rakelnummer.
-        const rakelIds = linkedIds(vehicle["Rakelnummer"]);
-        if (rakelIds.length !== 1) {
-          return json(
-            { error: "Fordonet saknar ett entydigt Rakelnummer" },
-            409,
-            corsHeaders
-          );
-        }
-
-        const rakelId = rakelIds[0];
-        const rakelValue =
-          Array.isArray(vehicle["Rakelnummer"]) &&
-          vehicle["Rakelnummer"][0]?.value
-            ? String(vehicle["Rakelnummer"][0].value)
-            : "";
-
-        // Extra kontroll: Rakel-raden ska finnas och vara den vi förväntar oss.
-        const rakelRow = await getRow(env, TABLES.rakel, rakelId);
-        if (!rakelRow) {
-          return json(
-            { error: "Fordonets Rakelnummer hittades inte i Rakelnummer-tabellen" },
-            409,
-            corsHeaders
-          );
-        }
-
-        if (
-          rakelValue &&
-          String(rakelRow["Name"] ?? "").trim() !== rakelValue.trim()
-        ) {
-          return json(
-            { error: "Fordonets Rakelkoppling stämmer inte med Rakelnummer-tabellen" },
-            409,
-            corsHeaders
-          );
-        }
-
-        const station = await getRow(env, TABLES.stations, stationId);
-        const stationName =
-          station?.["Station"] ||
-          station?.["Station-ID"] ||
-          `Station ${stationId}`;
-
-        const registration =
-          vehicle["Registreringsnummer"] ||
-          vehicle["Fordons-ID"] ||
-          `Fordon ${vehicleId}`;
-
-        const vehicleLabel = [rakelValue, registration]
-          .filter(Boolean)
-          .join(" – ");
-
-        const previousPlacement = placementFromMaterial(material);
-
-        // Registreringsnummer i Brandmaterial länkar till Fordon-tabellen,
-        // därför används vehicleId här.
-        const updatedMaterial = await updateMaterialPlacement(
-          env,
-          material.id,
-          {
-            Station: [],
-            Rakelnummer: [rakelId],
-            Registreringsnummer: [vehicleId],
-            Transportstatus: "Ingen transport",
-            "Transport till station": [],
-          }
-        );
-
-        let event;
-        try {
-          event = await createEvent(env, {
-            Material: [material.id],
-            "Händelsetyp": "Utcheckning",
-            Station: [stationId],
-            Fordon: [vehicleId],
-            Kommentar: `QR-utcheckning till ${vehicleLabel}`,
-            Status: "Godkänd",
-          });
-        } catch (eventError) {
-          await rollbackPlacementOrThrow(
-            env,
-            material.id,
-            previousPlacement,
-            materialId,
-            eventError
-          );
-        }
-
-        return json(
-          {
-            success: true,
-            action: "checkout",
-            materialId,
-            materialRowId: material.id,
-            stationId,
-            station: stationName,
-            vehicleId,
-            vehicle: registration,
-            rakel: rakelValue,
-            eventId: event.id,
-            message: `${materialId} är utcheckat till ${vehicleLabel}.`,
-            material: updatedMaterial,
-          },
-          200,
-          corsHeaders
-        );
-      }
-
-      // POST /transport
-      // Markerar ett material som under transport till en vald station.
-      // Materialet tas bort från nuvarande stations-/fordonsplacering tills det checkas in.
-      if (request.method === "POST" && url.pathname === "/transport") {
-        if (!isAllowedBrowserOrigin(request)) {
-          return json({ error: "Otillåten origin" }, 403, corsHeaders);
-        }
-
-        const body = await readJson(request);
-        const materialId = normalizeMaterialId(body?.materialId);
-        const destinationStationId = Number(body?.stationId);
-
-        if (!isValidMaterialId(materialId)) {
-          return json({ error: "Ogiltigt Material-ID" }, 400, corsHeaders);
-        }
-        if (!isPositiveInteger(destinationStationId)) {
-          return json({ error: "Ogiltigt destinations-ID" }, 400, corsHeaders);
-        }
-
-        const material = await findMaterialById(env, materialId);
-        if (!material) {
-          return json({ error: "Materialet hittades inte" }, 404, corsHeaders);
-        }
-        if (material["Aktiv"] !== true) {
-          return json({ error: "Materialet är inte aktivt" }, 409, corsHeaders);
-        }
-
-        const destination = await getRow(env, TABLES.stations, destinationStationId);
-        if (!destination) {
-          return json({ error: "Destinationsstationen hittades inte" }, 404, corsHeaders);
-        }
-        if (destination["Aktiv"] !== true) {
-          return json({ error: "Destinationsstationen är inte aktiv" }, 409, corsHeaders);
-        }
-
-        const previousPlacement = placementFromMaterial(material);
-        const sourceStationIds = linkedIds(material["Station"]);
-        const sourceVehicleIds = linkedIds(material["Registreringsnummer"]);
-        const sourceStationId = sourceStationIds.length === 1 ? sourceStationIds[0] : null;
-        const sourceVehicleId = sourceVehicleIds.length === 1 ? sourceVehicleIds[0] : null;
-
-        if (String(material["Transportstatus"]?.value || material["Transportstatus"] || "") === "Under transport") {
-          return json({ error: "Materialet är redan markerat som under transport" }, 409, corsHeaders);
-        }
-
-        if (sourceStationId === destinationStationId && !sourceVehicleId) {
-          return json({ error: "Materialet finns redan i destinationsstationens stationslager" }, 409, corsHeaders);
-        }
-
-        const destinationName =
-          destination["Station"] || destination["Station-ID"] || `Station ${destinationStationId}`;
-
-        let sourceLabel = "okänd placering";
-        if (sourceVehicleId) {
-          const vehicle = await getRow(env, TABLES.vehicles, sourceVehicleId);
-          const rakel =
-            Array.isArray(vehicle?.["Rakelnummer"]) && vehicle["Rakelnummer"][0]?.value
-              ? String(vehicle["Rakelnummer"][0].value)
-              : "";
-          const registration =
-            vehicle?.["Registreringsnummer"] || vehicle?.["Fordons-ID"] || `Fordon ${sourceVehicleId}`;
-          sourceLabel = [rakel, registration].filter(Boolean).join(" – ");
-        } else if (sourceStationId) {
-          const sourceStation = await getRow(env, TABLES.stations, sourceStationId);
-          sourceLabel =
-            sourceStation?.["Station"] || sourceStation?.["Station-ID"] || `Station ${sourceStationId}`;
-        }
-
-        const updatedMaterial = await updateMaterialPlacement(
-          env,
-          material.id,
-          {
-            Station: [],
-            Rakelnummer: [],
-            Registreringsnummer: [],
-            Transportstatus: "Under transport",
-            "Transport till station": [destinationStationId],
-          }
-        );
-
-        let event;
-        try {
-          event = await createEvent(env, {
-            Material: [material.id],
-            "Händelsetyp": "Transport",
-            Station: [destinationStationId],
-            Fordon: sourceVehicleId ? [sourceVehicleId] : [],
-            Kommentar: `Transport från ${sourceLabel} till ${destinationName}`,
-            Status: "Godkänd",
-          });
-        } catch (eventError) {
-          try {
-            await updateMaterialPlacement(env, material.id, {
-              ...previousPlacement,
-              Transportstatus: material["Transportstatus"]?.value || material["Transportstatus"] || "Ingen transport",
-              "Transport till station": linkedIds(material["Transport till station"]),
-            });
-          } catch (rollbackError) {
-            console.error("Rollback misslyckades:", rollbackError);
-            throw new Error(`Transporthändelsen kunde inte skapas och återställningen misslyckades. Kontrollera ${materialId} manuellt i Baserow.`);
-          }
-          throw new Error(`Transporthändelsen kunde inte skapas. Materialets tidigare placering återställdes. ${eventError.message}`);
-        }
-
-        return json({
-          success: true,
-          action: "transport",
-          materialId,
-          materialRowId: material.id,
-          destinationStationId,
-          destinationStation: destinationName,
-          eventId: event.id,
-          message: `${materialId} är markerat för transport till ${destinationName}.`,
-          material: updatedMaterial,
-        }, 200, corsHeaders);
-      }
-
-      // POST /stock-level/upsert
-      // Skapar eller uppdaterar stationens plan för en unik materialtyp.
-      if (request.method === "POST" && url.pathname === "/stock-level/upsert") {
-        if (!isAllowedBrowserOrigin(request)) return json({ error:"Otillåten origin" }, 403, corsHeaders);
-        const body = await readJson(request);
-        const stationId = Number(body?.stationId);
-        const material = String(body?.material || "").trim();
-        const stocked = body?.stocked !== false;
-        const redMax = Number(body?.redMax);
-        const noYellow = body?.noYellow === true;
-        const yellowMax = noYellow ? null : Number(body?.yellowMax);
-        const greenMax = Number(body?.greenMax);
-
-        if (!Number.isInteger(stationId) || stationId < 1 || !material) return json({ error:"Station och material krävs." }, 400, corsHeaders);
-
-        const all = await baserowRequest(env, `/database/rows/table/${TABLES.stockLevels}/?user_field_names=true&size=200`, {method:"GET"});
-        const norm = s => String(s || "").trim().toLocaleLowerCase("sv-SE");
-        const matches = all.results.filter(r =>
-          Array.isArray(r["Station"]) && Number(r["Station"][0]?.id ?? r["Station"][0]?.value?.id ?? r["Station"][0]) === stationId &&
-          norm(r["Material"]) === norm(material)
-        );
-        if (matches.length > 1) return json({ error:"Det finns dubbletter i Lagernivåer för denna station/material. Rätta dem först." }, 409, corsHeaders);
-
-        if (!stocked) {
-          if (!matches.length) return json({success:true, unchanged:true}, 200, corsHeaders);
-          const updated = await baserowRequest(env,
-            `/database/rows/table/${TABLES.stockLevels}/${matches[0].id}/?user_field_names=true`,
-            {method:"PATCH", body:{"Aktiv":false}});
-          return json({success:true,row:updated},200,corsHeaders);
-        }
-
-        if (!Number.isInteger(redMax) || redMax < 0 || !Number.isInteger(greenMax) || greenMax < 1) {
-          return json({error:"Röd och Grön/Max måste vara heltal. Röd får vara 0 och Grön/Max minst 1."},400,corsHeaders);
-        }
-        if (noYellow) {
-          if (greenMax < redMax + 1) {
-            return json({error:"Grön/Max måste vara högre än den röda nivån."},400,corsHeaders);
-          }
-        } else if (!Number.isInteger(yellowMax) || !(redMax < yellowMax && yellowMax < greenMax)) {
-          return json({error:"Med gul nivå måste nivåerna följa Röd < Gul < Grön/Max."},400,corsHeaders);
-        }
-        const payload = {
-          "Namn": `${material} – station ${stationId}`,
-          "Station": [stationId],
-          "Material": material,
-          "Röd under": redMax + 1,
-          "Grön från": noYellow ? redMax + 1 : yellowMax + 1,
-          "Max antal": greenMax,
-          "Aktiv": true
-        };
-        const row = matches.length
-          ? await baserowRequest(env, `/database/rows/table/${TABLES.stockLevels}/${matches[0].id}/?user_field_names=true`, {method:"PATCH",body:payload})
-          : await baserowRequest(env, `/database/rows/table/${TABLES.stockLevels}/?user_field_names=true`, {method:"POST",body:payload});
-        return json({success:true,row},200,corsHeaders);
-      }
-
-      // POST /vehicle-requirement/upsert
-      // Skapar eller uppdaterar fordonets exakta gröna nivå för en unik materialtyp.
-      if (request.method === "POST" && url.pathname === "/vehicle-requirement/upsert") {
-        if (!isAllowedBrowserOrigin(request)) return json({ error:"Otillåten origin" }, 403, corsHeaders);
-        const body = await readJson(request);
-        const vehicleId = Number(body?.vehicleId);
-        const material = String(body?.material || "").trim();
-        const stocked = body?.stocked !== false;
-        const required = Number(body?.required);
-        if (!Number.isInteger(vehicleId) || vehicleId < 1 || !material) return json({error:"Fordon och material krävs."},400,corsHeaders);
-
-        const all = await baserowRequest(env, `/database/rows/table/${TABLES.vehicleRequirements}/?user_field_names=true&size=200`, {method:"GET"});
-        const norm = s => String(s || "").trim().toLocaleLowerCase("sv-SE");
-        const matches = all.results.filter(r =>
-          Array.isArray(r["Fordon"]) && Number(r["Fordon"][0]?.id ?? r["Fordon"][0]?.value?.id ?? r["Fordon"][0]) === vehicleId &&
-          norm(r["Material"]) === norm(material)
-        );
-        if (matches.length > 1) return json({error:"Det finns dubbletter i Materialkrav fordon för detta fordon/material. Rätta dem först."},409,corsHeaders);
-
-        if (!stocked) {
-          if (!matches.length) return json({success:true,unchanged:true},200,corsHeaders);
-          const updated = await baserowRequest(env,
-            `/database/rows/table/${TABLES.vehicleRequirements}/${matches[0].id}/?user_field_names=true`,
-            {method:"PATCH",body:{"Aktiv":false}});
-          return json({success:true,row:updated},200,corsHeaders);
-        }
-        if (!Number.isInteger(required) || required < 0) return json({error:"Grön nivå måste vara ett heltal 0 eller högre."},400,corsHeaders);
-        const payload = {
-          "Namn": `${material} – fordon ${vehicleId}`,
-          "Fordon": [vehicleId],
-          "Material": material,
-          "Kravantal": required,
-          "Aktiv": true
-        };
-        const row = matches.length
-          ? await baserowRequest(env, `/database/rows/table/${TABLES.vehicleRequirements}/${matches[0].id}/?user_field_names=true`, {method:"PATCH",body:payload})
-          : await baserowRequest(env, `/database/rows/table/${TABLES.vehicleRequirements}/?user_field_names=true`, {method:"POST",body:payload});
-        return json({success:true,row},200,corsHeaders);
-      }
-
-      // POST /stock-level
-      // Redigerar en befintlig stations lagernivå.
-      if (request.method === "POST" && url.pathname === "/stock-level") {
-        if (!isAllowedBrowserOrigin(request)) {
-          return json({ error: "Otillåten origin" }, 403, corsHeaders);
-        }
-        const body = await readJson(request);
-        const id = Number(body?.id);
-        const redMax = Number(body?.redMax);
-        const yellowMax = Number(body?.yellowMax);
-        const greenMax = Number(body?.greenMax);
-
-        if (!isPositiveInteger(id)) return json({ error: "Ogiltig lagernivå." }, 400, corsHeaders);
-        if (![redMax, yellowMax, greenMax].every(Number.isInteger) || redMax < 0 || yellowMax < 0 || greenMax < 0) {
-          return json({ error: "Nivåerna måste vara heltal 0 eller högre." }, 400, corsHeaders);
-        }
-        if (!(redMax < yellowMax && yellowMax < greenMax)) {
-          return json({ error: "Nivåerna måste följa Röd < Gul < Grön/Max." }, 400, corsHeaders);
-        }
-
-        const existing = await getRow(env, TABLES.stockLevels, id);
-        if (!existing) return json({ error: "Lagernivån hittades inte." }, 404, corsHeaders);
-
-        const updated = await baserowRequest(
-          env,
-          `/database/rows/table/${TABLES.stockLevels}/${id}/?user_field_names=true`,
-          {
-            method: "PATCH",
-            body: {
-              "Röd under": redMax + 1,
-              "Grön från": yellowMax + 1,
-              "Max antal": greenMax,
-            }
-          }
-        );
-        return json({ success:true, row:updated }, 200, corsHeaders);
-      }
-
-      // POST /vehicle-requirement
-      // Fordon är grönt endast vid exakt angivet antal för materialet.
-      if (request.method === "POST" && url.pathname === "/vehicle-requirement") {
-        if (!isAllowedBrowserOrigin(request)) {
-          return json({ error: "Otillåten origin" }, 403, corsHeaders);
-        }
-        const body = await readJson(request);
-        const id = Number(body?.id);
-        const required = Number(body?.required);
-
-        if (!isPositiveInteger(id)) return json({ error: "Ogiltigt fordonskrav." }, 400, corsHeaders);
-        if (!Number.isInteger(required) || required < 0) {
-          return json({ error: "Grön nivå måste vara ett heltal 0 eller högre." }, 400, corsHeaders);
-        }
-
-        const existing = await getRow(env, TABLES.vehicleRequirements, id);
-        if (!existing) return json({ error: "Fordonskravet hittades inte." }, 404, corsHeaders);
-
-        const updated = await baserowRequest(
-          env,
-          `/database/rows/table/${TABLES.vehicleRequirements}/${id}/?user_field_names=true`,
-          { method:"PATCH", body:{ "Kravantal": required } }
-        );
-        return json({ success:true, row:updated }, 200, corsHeaders);
-      }
-
-      // POST /material/import
-      // Excel-filen läses i webbläsaren och skickas hit som rader.
-      // Material-ID är unik nyckel: befintliga poster uppdateras, nya skapas.
-      if (request.method === "POST" && url.pathname === "/material/import") {
-        if (!isAllowedBrowserOrigin(request)) {
-          return json({ error: "Otillåten origin" }, 403, corsHeaders);
-        }
-
-        const body = await readJson(request);
-        const rows = Array.isArray(body?.rows) ? body.rows : [];
-        if (!rows.length) return json({ error: "Importfilen innehåller inga materialrader." }, 400, corsHeaders);
-        if (rows.length > 500) return json({ error: "Max 500 rader per import." }, 400, corsHeaders);
-
-        const [materialData, stationData, vehicleData, rakelData] = await Promise.all([
-          baserowRequest(env, `/database/rows/table/${TABLES.material}/?user_field_names=true&size=200`, { method:"GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.stations}/?user_field_names=true&size=200`, { method:"GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.vehicles}/?user_field_names=true&size=200`, { method:"GET" }),
-          baserowRequest(env, `/database/rows/table/${TABLES.rakel}/?user_field_names=true&size=200`, { method:"GET" }),
-        ]);
-
-        const existingById = new Map();
-        const duplicateExisting = new Set();
-        for (const row of materialData.results) {
-          const id = normalizeMaterialId(row["Material-ID"]);
-          if (!id) continue;
-          if (existingById.has(id)) duplicateExisting.add(id);
-          else existingById.set(id, row);
-        }
-
-        const stationByName = new Map();
-        for (const s of stationData.results) {
-          const name = String(s["Station"] || s["Station-ID"] || "").trim().toLocaleLowerCase("sv-SE");
-          if (name) stationByName.set(name, s);
-        }
-        const vehicleByReg = new Map();
-        for (const v of vehicleData.results) {
-          const reg = String(v["Registreringsnummer"] || "").trim().toUpperCase();
-          if (reg) vehicleByReg.set(reg, v);
-        }
-        const rakelByValue = new Map();
-        for (const r of rakelData.results) {
-          const val = String(r["Name"] || r["Rakelnummer"] || r["Rakel"] || "").trim();
-          if (val) rakelByValue.set(val, r);
-        }
-
-        const seen = new Set();
-        const errors = [];
-        const prepared = [];
-
-        for (let i = 0; i < rows.length; i++) {
-          const source = rows[i] || {};
-          const excelRow = Number(source.__row || i + 2);
-          const materialId = normalizeMaterialId(source["Material-ID"]);
-
-          if (!isValidMaterialId(materialId)) {
-            errors.push(`Rad ${excelRow}: Material-ID måste vara SKRTJ-xxxxx.`);
-            continue;
-          }
-          if (seen.has(materialId)) {
-            errors.push(`Rad ${excelRow}: ${materialId} förekommer flera gånger i Excel-filen.`);
-            continue;
-          }
-          seen.add(materialId);
-          if (duplicateExisting.has(materialId)) {
-            errors.push(`Rad ${excelRow}: ${materialId} finns redan som dubblett i Baserow och måste rättas manuellt.`);
-            continue;
-          }
-
-          const existing = existingById.get(materialId) || null;
-          const patch = {};
-          const has = (key) => source[key] !== undefined && source[key] !== null && String(source[key]).trim() !== "";
-
-          if (has("Material")) patch["Material"] = String(source["Material"]).trim();
-          if (has("Kategori")) patch["Kategori"] = String(source["Kategori"]).trim();
-          if (has("Kommentar")) patch["Kommentar"] = String(source["Kommentar"]).trim();
-          if (has("Aktiv")) {
-            const v = String(source["Aktiv"]).trim().toLowerCase();
-            patch["Aktiv"] = source["Aktiv"] === true || ["true","sant","ja","1"].includes(v);
-          }
-          if (has("Transportstatus")) {
-            const ts = String(source["Transportstatus"]).trim();
-            if (!["Ingen transport","Under transport"].includes(ts)) {
-              errors.push(`Rad ${excelRow}: ogiltig Transportstatus "${ts}".`);
-            } else patch["Transportstatus"] = ts;
-          }
-
-          let stationId = null, vehicleId = null, rakelId = null, transportStationId = null;
-          if (has("Station")) {
-            const station = stationByName.get(String(source["Station"]).trim().toLocaleLowerCase("sv-SE"));
-            if (!station) errors.push(`Rad ${excelRow}: station "${source["Station"]}" hittades inte.`);
-            else stationId = station.id;
-          }
-          if (has("Registreringsnummer")) {
-            const vehicle = vehicleByReg.get(String(source["Registreringsnummer"]).trim().toUpperCase());
-            if (!vehicle) errors.push(`Rad ${excelRow}: registreringsnummer "${source["Registreringsnummer"]}" hittades inte.`);
-            else vehicleId = vehicle.id;
-          }
-          if (has("Rakelnummer")) {
-            const rakel = rakelByValue.get(String(source["Rakelnummer"]).trim());
-            if (!rakel) errors.push(`Rad ${excelRow}: Rakelnummer "${source["Rakelnummer"]}" hittades inte.`);
-            else rakelId = rakel.id;
-          }
-          if (has("Transport till station")) {
-            const station = stationByName.get(String(source["Transport till station"]).trim().toLocaleLowerCase("sv-SE"));
-            if (!station) errors.push(`Rad ${excelRow}: transportstation "${source["Transport till station"]}" hittades inte.`);
-            else transportStationId = station.id;
-          }
-
-          // Placering ändras bara om någon placeringskolumn faktiskt är ifylld.
-          if (stationId) {
-            patch["Station"] = [stationId];
-            patch["Registreringsnummer"] = [];
-            patch["Rakelnummer"] = [];
-            patch["Transportstatus"] = "Ingen transport";
-            patch["Transport till station"] = [];
-          } else if (vehicleId || rakelId) {
-            if (!(vehicleId && rakelId)) {
-              errors.push(`Rad ${excelRow}: fordon kräver både Registreringsnummer och Rakelnummer.`);
-            } else {
-              patch["Station"] = [];
-              patch["Registreringsnummer"] = [vehicleId];
-              patch["Rakelnummer"] = [rakelId];
-              patch["Transportstatus"] = "Ingen transport";
-              patch["Transport till station"] = [];
-            }
-          } else if (patch["Transportstatus"] === "Under transport") {
-            if (!transportStationId) errors.push(`Rad ${excelRow}: Under transport kräver "Transport till station".`);
-            else {
-              patch["Station"] = [];
-              patch["Registreringsnummer"] = [];
-              patch["Rakelnummer"] = [];
-              patch["Transport till station"] = [transportStationId];
-            }
-          }
-
-          if (!existing && !patch["Material"]) errors.push(`Rad ${excelRow}: nytt material kräver Material.`);
-          if (!existing && !patch["Kategori"]) errors.push(`Rad ${excelRow}: nytt material kräver Kategori.`);
-
-          prepared.push({ excelRow, materialId, existing, patch });
-        }
-
-        if (errors.length) {
-          return json({ success:false, imported:false, errors, newCount:0, updatedCount:0 }, 400, corsHeaders);
-        }
-
-        let newCount = 0, updatedCount = 0, unchangedCount = 0;
-        const results = [];
-
-        for (const item of prepared) {
-          if (item.existing) {
-            if (!Object.keys(item.patch).length) {
-              unchangedCount++;
-              results.push({ materialId:item.materialId, action:"unchanged" });
-              continue;
-            }
-            await baserowRequest(
-              env,
-              `/database/rows/table/${TABLES.material}/${item.existing.id}/?user_field_names=true`,
-              { method:"PATCH", body:item.patch }
-            );
-            updatedCount++;
-            results.push({ materialId:item.materialId, action:"updated" });
-          } else {
-            await baserowRequest(
-              env,
-              `/database/rows/table/${TABLES.material}/?user_field_names=true`,
-              {
-                method:"POST",
-                body:{
-                  "Material-ID": item.materialId,
-                  "Aktiv": item.patch["Aktiv"] ?? true,
-                  ...item.patch,
-                }
-              }
-            );
-            newCount++;
-            results.push({ materialId:item.materialId, action:"created" });
-          }
-        }
-
-        return json({
-          success:true,
-          imported:true,
-          newCount,
-          updatedCount,
-          unchangedCount,
-          results
-        }, 200, corsHeaders);
-      }
-
-      // GET /exercise-rules – Nyköpings styrning av vad som får beställas till övning.
-      if (request.method === "GET" && url.pathname === "/exercise-rules") {
-        const [levels, materialData] = await Promise.all([
-          baserowRequest(env, `/database/rows/table/${TABLES.stockLevels}/?user_field_names=true&size=200`, {method:"GET"}),
-          baserowRequest(env, `/database/rows/table/${TABLES.material}/?user_field_names=true&size=200`, {method:"GET"})
-        ]);
-        const materials=[...new Set(materialData.results.map(r=>String(r["Material"]||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"sv"));
-        const rules=levels.results.filter(r=>String(r["Namn"]||"").startsWith("ÖVNING – ")).map(r=>({
-          id:r.id,
-          material:String(r["Material"]||"").replace(/^ÖVNING:/,""),
-          active:r["Aktiv"]===true,
-          maxQuantity:Number(r["Max antal"]||0)
-        }));
-        return json({materials,rules},200,corsHeaders);
-      }
-
-      // POST /exercise-rule/upsert – endast administrationsvyn använder denna.
-      if (request.method === "POST" && url.pathname === "/exercise-rule/upsert") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body=await readJson(request);
-        const material=String(body?.material||"").trim();
-        const active=body?.active===true;
-        const maxQuantity=Number(body?.maxQuantity);
-        if(!material) return json({error:"Material måste anges."},400,corsHeaders);
-        if(active&&(!Number.isInteger(maxQuantity)||maxQuantity<1)) return json({error:"Max antal måste vara minst 1."},400,corsHeaders);
-        const [levels,stations]=await Promise.all([
-          baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/?user_field_names=true&size=200`,{method:"GET"}),
-          baserowRequest(env,`/database/rows/table/${TABLES.stations}/?user_field_names=true&size=200`,{method:"GET"})
-        ]);
-        const nyk=stations.results.find(r=>String(r["Station"]||r["Station-ID"]||"").trim().toLocaleLowerCase("sv-SE")==="nyköping");
-        if(!nyk) return json({error:"Stationen Nyköping hittades inte."},409,corsHeaders);
-        const name=`ÖVNING – ${material}`;
-        const existing=levels.results.find(r=>String(r["Namn"]||"")===name);
-        const payload={"Namn":name,"Station":[nyk.id],"Material":`ÖVNING:${material}`,"Röd under":0,"Grön från":0,"Max antal":active?maxQuantity:0,"Aktiv":active};
-        const saved=existing
-          ? await baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/${existing.id}/?user_field_names=true`,{method:"PATCH",body:payload})
-          : await baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/?user_field_names=true`,{method:"POST",body:payload});
-        return json({success:true,id:saved.id,material,active,maxQuantity:active?maxQuantity:0},200,corsHeaders);
-      }
-
-      // GET /orders – lagerbeställningar samt grupperade övningsbeställningar.
-      if (request.method === "GET" && url.pathname === "/orders") {
-        const data=await baserowRequest(env,`/database/rows/table/${TABLES.orders}/?user_field_names=true&size=200`,{method:"GET"});
-        const normal=[]; const exerciseMap=new Map();
-        for(const row of data.results){
-          const type=row["Beställningstyp"]?.value||row["Beställningstyp"]||"";
-          const common={id:row.id,orderId:row["Beställnings-ID"]||"",type,stationId:linkedIds(row["Beställande station"])[0]||null,station:Array.isArray(row["Beställande station"])&&row["Beställande station"][0]?.value?String(row["Beställande station"][0].value):"",comment:row["Kommentar"]||"",status:row["Status"]?.value||row["Status"]||"",created:row["Skapad"]||"",exerciseDate:row["Övningsdatum"]||"",orderedBy:row["Beställare"]||""};
-          if(type!=="Övning") normal.push({...common,material:row["Material"]||"",quantity:Number(row["Antal"]||0)});
-          else{
-            const key=common.orderId||`ROW-${row.id}`;
-            if(!exerciseMap.has(key)) exerciseMap.set(key,{...common,lines:[]});
-            exerciseMap.get(key).lines.push({material:row["Material"]||"",quantity:Number(row["Antal"]||0)});
-          }
-        }
-        const orders=[...normal,...exerciseMap.values()].sort((a,b)=>Number(b.id)-Number(a.id));
-        return json({orders},200,corsHeaders);
-      }
-
-      // POST /orders – Lager behåller en rad. Övning kan innehålla flera materialrader.
-      if (request.method === "POST" && url.pathname === "/orders") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body=await readJson(request); const type=String(body?.type||"").trim(); const stationId=Number(body?.stationId); const comment=String(body?.comment||"").trim();
-        if(!["Lager","Övning"].includes(type)) return json({error:"Beställningstyp måste vara Lager eller Övning."},400,corsHeaders);
-        if(!isPositiveInteger(stationId)) return json({error:"Beställande station måste anges."},400,corsHeaders);
-        const station=await getRow(env,TABLES.stations,stationId); if(!station||station["Aktiv"]!==true) return json({error:"Beställande station finns inte eller är inte aktiv."},409,corsHeaders);
-        const existing=await baserowRequest(env,`/database/rows/table/${TABLES.orders}/?user_field_names=true&size=200`,{method:"GET"});
-        const used=new Set(existing.results.map(r=>String(r["Beställnings-ID"]||"").match(/^BEST-(\d{5})$/i)).filter(Boolean).map(m=>Number(m[1]))); let next=1; while(used.has(next))next++; const orderId=`BEST-${String(next).padStart(5,"0")}`;
-        if(type==="Lager"){
-          const materialName=String(body?.material||"").trim(); const quantity=Number(body?.quantity);
-          if(!materialName||!Number.isInteger(quantity)||quantity<1) return json({error:"Material och antal måste anges."},400,corsHeaders);
-          const created=await baserowRequest(env,`/database/rows/table/${TABLES.orders}/?user_field_names=true`,{method:"POST",body:{"Beställnings-ID":orderId,"Beställningstyp":"Lager","Material":materialName,"Antal":quantity,"Beställande station":[stationId],"Kommentar":comment,"Status":"Beställd"}});
-          return json({success:true,orderId,rowId:created.id,type,status:"Beställd"},201,corsHeaders);
-        }
-        const exerciseDate=String(body?.exerciseDate||"").trim(); const orderedBy=String(body?.orderedBy||"").trim(); const lines=Array.isArray(body?.lines)?body.lines:[];
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(exerciseDate)) return json({error:"Övningsdatum måste anges."},400,corsHeaders);
-        if(!orderedBy) return json({error:"Beställare måste anges."},400,corsHeaders);
-        if(!lines.length) return json({error:"Lägg till minst en materialtyp."},400,corsHeaders);
-        const levels=await baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/?user_field_names=true&size=200`,{method:"GET"});
-        const rules=new Map(levels.results.filter(r=>String(r["Namn"]||"").startsWith("ÖVNING – ")&&r["Aktiv"]===true).map(r=>[String(r["Material"]||"").replace(/^ÖVNING:/,"").trim().toLocaleLowerCase("sv-SE"),Number(r["Max antal"]||0)]));
-        const seen=new Set(); const clean=[];
-        for(const x of lines){const material=String(x?.material||"").trim(); const quantity=Number(x?.quantity); const k=material.toLocaleLowerCase("sv-SE"); if(!material||seen.has(k)) return json({error:"Varje materialtyp får bara finnas en gång."},400,corsHeaders); seen.add(k); const max=rules.get(k); if(!max) return json({error:`${material} är inte beställningsbar för övning.`},409,corsHeaders); if(!Number.isInteger(quantity)||quantity<1||quantity>max) return json({error:`${material}: antal måste vara 1–${max}.`},409,corsHeaders); clean.push({material,quantity});}
-        const items=clean.map(x=>({"Beställnings-ID":orderId,"Beställningstyp":"Övning","Material":x.material,"Antal":x.quantity,"Beställande station":[stationId],"Beställare":orderedBy,"Övningsdatum":exerciseDate,"Kommentar":comment,"Status":"Beställd"}));
-        const created=await baserowRequest(env,`/database/rows/table/${TABLES.orders}/batch/?user_field_names=true`,{method:"POST",body:{items}});
-        return json({success:true,orderId,rowIds:(created.items||[]).map(x=>x.id),type:"Övning",exerciseDate,orderedBy,lines:clean,status:"Beställd"},201,corsHeaders);
-      }
-
-      // POST /orders/status – Övning: Beställd → Packad → Skickad. Hela ordern uppdateras samtidigt.
-      if (request.method === "POST" && url.pathname === "/orders/status") {
-        if (!isAllowedBrowserOrigin(request)) return json({error:"Otillåten origin"},403,corsHeaders);
-        const body=await readJson(request); const rowId=Number(body?.rowId); const orderId=String(body?.orderId||"").trim(); const status=String(body?.status||"").trim();
-        const all=await baserowRequest(env,`/database/rows/table/${TABLES.orders}/?user_field_names=true&size=200`,{method:"GET"});
-        let rows=orderId?all.results.filter(r=>String(r["Beställnings-ID"]||"")===orderId):all.results.filter(r=>r.id===rowId);
-        if(!rows.length) return json({error:"Beställningen hittades inte."},404,corsHeaders);
-        const type=rows[0]["Beställningstyp"]?.value||rows[0]["Beställningstyp"]||"";
-        if(type==="Övning"){
-          const current=rows[0]["Status"]?.value||rows[0]["Status"]||"Beställd"; const allowed={"Beställd":"Packad","Packad":"Skickad"};
-          if(status!==allowed[current]) return json({error:`Nästa status efter ${current} är ${allowed[current]||"ingen"}.`},409,corsHeaders);
-          const items=rows.map(r=>({id:r.id,"Status":status})); await baserowRequest(env,`/database/rows/table/${TABLES.orders}/batch/?user_field_names=true`,{method:"PATCH",body:{items}});
-          return json({success:true,orderId:rows[0]["Beställnings-ID"]||orderId,status},200,corsHeaders);
-        }
-        if(!["Beställd","Mottagen","Klar","Avbruten"].includes(status)) return json({error:"Ogiltig status."},400,corsHeaders);
-        if(!isPositiveInteger(rowId)) return json({error:"Ogiltigt beställnings-ID."},400,corsHeaders);
-        const updated=await baserowRequest(env,`/database/rows/table/${TABLES.orders}/${rowId}/?user_field_names=true`,{method:"PATCH",body:{"Status":status}});
-        return json({success:true,rowId,status,orderId:updated["Beställnings-ID"]||""},200,corsHeaders);
-      }
-
-      // Hälsokontroll
-      if (request.method === "GET" && url.pathname === "/") {
-        return json(
-          {
-            status: "ok",
-            service: "Rökskydd Material API",
-            mode: "material-plan-optional-yellow-enabled",
-          },
-          200,
-          corsHeaders
-        );
-      }
-
-      return json({ error: "Endpoint finns inte" }, 404, corsHeaders);
-    } catch (error) {
-      console.error("WORKER_ERROR", error?.message || error);
-      return json(
-        {
-          error: error?.message || "API-fel",
-          baserowStatus: error?.baserowStatus || null,
-          baserowBody: error?.baserowBody || null
-        },
-        error?.status && error.status >= 400 && error.status < 600 ? error.status : 500,
-        corsHeaders
-      );
-    }
-  },
-};
-
-function normalizeMaterialId(value) {
-  return String(value ?? "").trim().toUpperCase();
+const API = "https://ros-material-api.peter-hasselberg.workers.dev";
+
+const params = new URLSearchParams(location.search);
+const material = (params.get("material") || "").trim().toUpperCase();
+const consumable = (params.get("forbrukning") || "").trim().toUpperCase();
+
+const el = id => document.getElementById(id);
+
+if (consumable) {
+  document.body.classList.add("qr-mode", "consumable-mode");
+  el("headerText").textContent = "Förbrukningsartikel";
+  startConsumableMode();
+} else if (material) {
+  document.body.classList.add("qr-mode");
+  el("headerText").textContent = "Skannat material";
+  startQrMode();
+} else {
+  startHome();
 }
 
-function isValidMaterialId(value) {
-  return /^SKRTJ-\d{5}$/.test(value);
+async function apiGet(path) {
+  const response = await fetch(API + path);
+  let data;
+  try { data = await response.json(); }
+  catch { throw new Error("API:t gav ett ogiltigt svar."); }
+
+  if (!response.ok) {
+    const extra = data.baserowBody ? "\nBaserow: " + data.baserowBody : "";
+    throw new Error((data.error || data.message || "API-fel") + extra);
+  }
+  return data;
 }
 
-function isPositiveInteger(value) {
-  return Number.isInteger(value) && value > 0;
+
+async function apiPost(path, body) {
+  const response = await fetch(API + path, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(body)
+  });
+  let data;
+  try { data = await response.json(); }
+  catch { throw new Error("API:t gav ett ogiltigt svar."); }
+  if (!response.ok) throw new Error(data.error || data.message || "API-fel");
+  return data;
 }
 
-function numberOrNull(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
+async function editStationLevel(level, stationName) {
+  const currentRedMax = level.redBelow !== null ? Math.max(0, Number(level.redBelow) - 1) : 0;
+  const currentYellowMax = level.greenFrom !== null ? Math.max(currentRedMax + 1, Number(level.greenFrom) - 1) : currentRedMax + 1;
+  const currentGreenMax = level.max !== null ? Number(level.max) : currentYellowMax + 1;
 
-function sameMaterialName(a, b) {
-  return String(a || "").trim().toLocaleLowerCase("sv-SE") ===
-    String(b || "").trim().toLocaleLowerCase("sv-SE");
-}
+  const redText = prompt(
+    stationName + " – " + level.material + "\n\n🔴 Röd nivå t.o.m. antal:",
+    String(currentRedMax)
+  );
+  if (redText === null) return;
 
-function stationStockStatus(actual, redBelow, greenFrom, max) {
-  if (redBelow !== null && actual < redBelow) return "red";
-  if (greenFrom !== null && actual < greenFrom) return "yellow";
-  if (max !== null && actual > max) return "yellow";
-  return "green";
-}
+  const yellowText = prompt(
+    "🟡 Gul nivå t.o.m. antal:\n(Gul börjar automatiskt på " + (Number(redText) + 1) + ")",
+    String(currentYellowMax)
+  );
+  if (yellowText === null) return;
 
-function isAllowedBrowserOrigin(request) {
-  return request.headers.get("Origin") === ALLOWED_ORIGIN;
-}
+  const greenText = prompt(
+    "🟢 Grön nivå – högsta antal / MAX:\n(Grön börjar automatiskt på " + (Number(yellowText) + 1) + ")\n\nFör exakt grön nivå anger du samma tal som grön start.",
+    String(currentGreenMax)
+  );
+  if (greenText === null) return;
 
-async function readJson(request) {
+  const redMax = Number(redText), yellowMax = Number(yellowText), greenMax = Number(greenText);
+  if (![redMax,yellowMax,greenMax].every(Number.isInteger) || redMax < 0 || !(redMax < yellowMax && yellowMax < greenMax)) {
+    alert("Ogiltiga nivåer.\n\nDe måste vara heltal och följa:\nRöd högsta < Gul högsta < Grön MAX.");
+    return;
+  }
+
   try {
-    return await request.json();
-  } catch {
-    const error = new Error("Ogiltig JSON");
-    error.status = 400;
-    throw error;
+    await apiPost("/stock-level", {id:level.id, redMax, yellowMax, greenMax});
+    overviewData = await apiGet("/overview");
+    renderHome();
+  } catch (err) {
+    alert("Kunde inte spara stationsnivån:\n" + (err.message || err));
   }
 }
 
-function linkedIds(value) {
-  // Baserow kan returnera länkfält som objekt, id:n eller ett enskilt värde.
-  // Normalisera alla varianter så Register-sidan alltid får rätt linked row-id.
-  const values = Array.isArray(value)
-    ? value
-    : (value === null || value === undefined || value === "" ? [] : [value]);
-
-  return values
-    .map((item) => {
-      if (item && typeof item === "object") {
-        return Number(item.id ?? item.value?.id ?? item.row_id ?? item.rowId);
-      }
-      return Number(item);
-    })
-    .filter((id) => isPositiveInteger(id));
-}
-
-function placementFromMaterial(material) {
-  return {
-    Station: linkedIds(material["Station"]),
-    Rakelnummer: linkedIds(material["Rakelnummer"]),
-    Registreringsnummer: linkedIds(material["Registreringsnummer"]),
-  };
-}
-
-async function findMaterialById(env, materialId) {
-  const data = await baserowRequest(
-    env,
-    `/database/rows/table/${TABLES.material}/?user_field_names=true&size=200`,
-    { method: "GET" }
+async function editVehicleRequirement(requirement, vehicleLabel) {
+  const value = prompt(
+    vehicleLabel + " – " + requirement.material +
+    "\n\n🟢 Ange exakt antal som ska vara GRÖNT:\nAlla andra antal visas rött.",
+    String(requirement.required ?? 0)
   );
+  if (value === null) return;
 
-  return data.results.find(
-    (row) => normalizeMaterialId(row["Material-ID"]) === materialId
-  );
-}
+  const required = Number(value);
+  if (!Number.isInteger(required) || required < 0) {
+    alert("Grön nivå måste vara ett heltal 0 eller högre.");
+    return;
+  }
 
-async function getRow(env, tableId, rowId) {
   try {
-    return await baserowRequest(
-      env,
-      `/database/rows/table/${tableId}/${rowId}/?user_field_names=true`,
-      { method: "GET" }
-    );
-  } catch (error) {
-    if (error.status === 404) return null;
-    throw error;
+    await apiPost("/vehicle-requirement", {id:requirement.id, required});
+    overviewData = await apiGet("/overview");
+    renderHome();
+  } catch (err) {
+    alert("Kunde inte spara fordonsnivån:\n" + (err.message || err));
   }
 }
 
-async function updateMaterialPlacement(env, materialRowId, placement) {
-  return baserowRequest(
-    env,
-    `/database/rows/table/${TABLES.material}/${materialRowId}/?user_field_names=true`,
-    {
-      method: "PATCH",
-      body: placement,
-    }
-  );
-}
+let currentConsumable = null;
 
-async function createEvent(env, body) {
-  return baserowRequest(
-    env,
-    `/database/rows/table/${TABLES.events}/?user_field_names=true`,
-    {
-      method: "POST",
-      body,
-    }
-  );
-}
-
-async function rollbackPlacementOrThrow(
-  env,
-  materialRowId,
-  previousPlacement,
-  materialId,
-  originalError
-) {
+async function startConsumableMode() {
+  document.querySelector(".consumable-qr").style.display = "block";
+  if (!/^FORB-\d{3,5}$/.test(consumable)) {
+    showConsumableError("Ogiltigt Artikel-ID: " + consumable);
+    return;
+  }
   try {
-    await updateMaterialPlacement(env, materialRowId, previousPlacement);
-  } catch (rollbackError) {
-    console.error("Rollback misslyckades:", rollbackError);
-    throw new Error(
-      `Händelsen kunde inte skapas och återställningen misslyckades. Kontrollera ${materialId} manuellt i Baserow. Ursprungligt fel: ${originalError.message}`
-    );
+    currentConsumable = await apiGet("/consumable/" + encodeURIComponent(consumable));
+    renderConsumable();
+    el("consumableLoading").style.display = "none";
+    el("consumableCard").style.display = "block";
+  } catch (err) {
+    showConsumableError(err.message);
   }
-
-  throw new Error(
-    `Händelsen kunde inte skapas. Materialets tidigare placering återställdes. ${originalError.message}`
-  );
 }
 
-function normalizeConsumableId(value) {
-  return String(value || "").trim().toUpperCase();
-}
-
-function isValidConsumableId(value) {
-  return /^FORB-\d{3,5}$/.test(normalizeConsumableId(value));
-}
-
-async function consumableTargetForStation(env, stationId, articleId) {
-  const data=await baserowRequest(env,`/database/rows/table/${TABLES.stockLevels}/?user_field_names=true&size=200`,{method:"GET"});
-  const key=`FORB:${normalizeConsumableId(articleId)}`.toUpperCase();
-  const row=data.results.find(r=>r["Aktiv"]===true && linkedIds(r["Station"])[0]===Number(stationId) && String(r["Material"]||"").trim().toUpperCase()===key);
-  return row?Math.max(0,integerOrZero(row["Max antal"])):0;
-}
-
-function integerOrZero(value) {
-  const n = Number(value);
-  return Number.isInteger(n) ? n : 0;
-}
-
-function consumableFromRow(row) {
-  const balance = integerOrZero(row["Saldo"]);
-  const reorderAt = Number.isFinite(Number(row["Beställ vid"])) ? Number(row["Beställ vid"]) : null;
-  const target = Number.isFinite(Number(row["Önskat lager"])) ? Number(row["Önskat lager"]) : null;
-  const stationIds = linkedIds(row["Station"]);
-  const stationName = Array.isArray(row["Station"]) && row["Station"][0]?.value
-    ? String(row["Station"][0].value) : "";
-  const packageSize = Math.max(0, integerOrZero(row["Förpackningsstorlek"]));
-  const minimumOrderQuantity = Math.max(0, integerOrZero(row["Minsta beställningsantal"]));
-  const orderNeeded = reorderAt !== null && balance <= reorderAt;
-  let orderQuantity = 0;
-  if (orderNeeded && target !== null) {
-    const shortage = Math.max(0, target - balance);
-    const nykoping = normalizeSwedishName(stationName) === "nyköping";
-    if (nykoping) {
-      const required = Math.max(shortage, minimumOrderQuantity);
-      orderQuantity = packageSize > 0 ? Math.ceil(required / packageSize) * packageSize : required;
-    } else {
-      orderQuantity = shortage;
-    }
+function renderConsumable() {
+  const item = currentConsumable;
+  if (!item) return;
+  el("consumableId").textContent = item.articleId || consumable;
+  el("consumableName").textContent = item.article || "Okänd artikel";
+  el("consumableStation").textContent = item.station || "Station saknas";
+  el("consumableBalance").textContent = item.balance ?? 0;
+  el("consumableUnit").textContent = item.unit || "st";
+  el("consumableReorderAt").textContent = item.reorderAt == null ? "–" : item.reorderAt + " " + (item.unit || "st");
+  el("consumableTarget").textContent = item.target == null ? "–" : item.target + " " + (item.unit || "st");
+  const usage = el("consumableUsageArea");
+  if (usage) {
+    const text = String(item.usageArea || "").trim();
+    usage.style.display = text ? "block" : "none";
+    usage.innerHTML = text ? "<strong>Användningsområde</strong><br>" + escapeHtml(text).replace(/\n/g, "<br>") : "";
   }
-  return {
-    rowId: row.id,
-    articleId: normalizeConsumableId(row["Artikel-ID"]),
-    article: String(row["Artikel"] || ""),
-    category: String(row["Kategori"] || ""),
-    stationId: stationIds.length === 1 ? stationIds[0] : null,
-    station: stationName,
-    balance,
-    reorderAt,
-    target,
-    unit: String(row["Enhet"] || "st"),
-    supplier: String(row["Leverantör"] || ""),
-    supplierArticleNumber: String(row["Artikelnummer"] || ""),
-    orderUrl: String(row["Beställningslänk"] || ""),
-    contactPerson: String(row["Kontaktperson"] || ""),
-    phone: String(row["Telefon"] || ""),
-    email: String(row["E-post"] || ""),
-    customerNumber: String(row["Kundnummer"] || ""),
-    agreementNumber: String(row["Avtalsnummer"] || ""),
-    packageSize,
-    minimumOrderQuantity,
-    orderComment: String(row["Beställningskommentar"] || ""),
-    usageArea: String(row["Användningsområde"] || ""),
-    comment: String(row["Kommentar"] || ""),
-    active: row["Aktiv"] === true,
-    orderable: row["Beställningsbar"] === true,
-    orderNeeded,
-    orderQuantity
-  };
-}
-
-function consumableOrderFromRow(row) {
-  const article = Array.isArray(row["Artikel"]) && row["Artikel"][0] ? row["Artikel"][0] : null;
-  const from = Array.isArray(row["Från station"]) && row["Från station"][0] ? row["Från station"][0] : null;
-  const to = Array.isArray(row["Till station"]) && row["Till station"][0] ? row["Till station"][0] : null;
-  return {
-    rowId: row.id,
-    orderId: String(row["Beställnings-ID"] || ""),
-    articleRowId: article?.id || null,
-    article: article?.value || "",
-    fromStationId: from?.id || null,
-    fromStation: from?.value || "",
-    toStationId: to?.id || null,
-    toStation: to?.value || "",
-    quantity: integerOrZero(row["Antal"]),
-    orderedBy: String(row["Beställare"] || ""),
-    status: row["Status"]?.value || row["Status"] || "",
-    created: row["Skapad"] || "",
-    comment: String(row["Kommentar"] || "")
-  };
-}
-
-function normalizeSwedishName(value) {
-  return String(value || "").trim().toLocaleLowerCase("sv-SE");
-}
-
-function stripSupplierUnlessNykoping(item) {
-  if (normalizeSwedishName(item?.station) === "nyköping") return item;
-  const copy = {...item};
-  ["supplier","supplierArticleNumber","orderUrl","contactPerson","phone","email","customerNumber","agreementNumber","orderComment"].forEach(key => { copy[key] = ""; });
-  return copy;
-}
-
-async function findConsumableById(env, articleId) {
-  const wanted = normalizeConsumableId(articleId);
-  const data = await baserowRequest(
-    env,
-    `/database/rows/table/${TABLES.consumables}/?user_field_names=true&size=200`,
-    { method:"GET" }
-  );
-  return data.results.find(row => normalizeConsumableId(row["Artikel-ID"]) === wanted) || null;
-}
-
-const BASEROW_GET_CACHE_TTL_MS = 3000;
-const baserowGetCache = new Map();
-const baserowGetInflight = new Map();
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function clearBaserowReadCache() {
-  baserowGetCache.clear();
-  baserowGetInflight.clear();
-}
-
-async function baserowRequest(env, path, options = {}) {
-  if (!env.BASEROW_TOKEN) {
-    throw new Error("BASEROW_TOKEN saknas i Cloudflare");
-  }
-
-  const method = String(options.method || "GET").toUpperCase();
-  const isGet = method === "GET";
-  const cacheKey = isGet ? path : null;
-
-  // Kort cache minskar dubbla Baserow-läsningar när Lageröversikten laddar flera
-  // delar samtidigt. Skrivningar cachas aldrig.
-  if (isGet) {
-    const cached = baserowGetCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
-    if (cached) baserowGetCache.delete(cacheKey);
-
-    // Om samma GET redan pågår återanvänds samma Promise i stället för ett nytt
-    // Baserow-anrop.
-    const inflight = baserowGetInflight.get(cacheKey);
-    if (inflight) return inflight;
+  const warning = el("consumableOrderWarning");
+  if (item.orderNeeded) {
+    warning.className = "message error active consumable-order-warning";
+    warning.innerHTML = "<strong>🔴 BESTÄLL</strong>" + (item.orderQuantity > 0 ? "<br>Beställ " + escapeHtml(item.orderQuantity) + " " + escapeHtml(item.unit || "st") + " för att nå önskat lager." : "");
   } else {
-    // Efter en skrivning ska nästa läsning alltid hämta färska saldon/statusar.
-    clearBaserowReadCache();
-  }
-
-  const run = async () => {
-    const headers = { Authorization: `Token ${env.BASEROW_TOKEN}` };
-    const fetchOptions = { method, headers };
-
-    if (options.body !== undefined) {
-      headers["Content-Type"] = "application/json";
-      fetchOptions.body = JSON.stringify(options.body);
-    }
-
-    const maxAttempts = 4;
-    let lastStatus = 0;
-    let lastText = "";
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const response = await fetch(BASEROW_API + path, fetchOptions);
-      const text = await response.text();
-      lastStatus = response.status;
-      lastText = text;
-
-      if (response.ok) {
-        if (!text) return null;
-        try {
-          return JSON.parse(text);
-        } catch {
-          throw new Error("Baserow gav ett ogiltigt JSON-svar");
-        }
-      }
-
-      if (response.status === 429 && attempt < maxAttempts) {
-        const retryAfter = Number(response.headers.get("Retry-After"));
-        const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
-          ? Math.min(retryAfter * 1000, 10000)
-          : Math.min(500 * (2 ** (attempt - 1)), 4000);
-        console.log("BASEROW_THROTTLED_RETRY", JSON.stringify({path, method, attempt, waitMs}));
-        await sleep(waitMs);
-        continue;
-      }
-
-      const error = new Error(`Baserow svarade ${response.status}: ${text || response.statusText}`);
-      error.status = response.status;
-      error.baserowStatus = response.status;
-      error.baserowBody = text || response.statusText || "";
-      console.log("BASEROW_ERROR", JSON.stringify({status:response.status, body:error.baserowBody, path, method}));
-      throw error;
-    }
-
-    const error = new Error(`Baserow svarade ${lastStatus}: ${lastText || "Request was throttled."}`);
-    error.status = lastStatus || 429;
-    throw error;
-  };
-
-  if (!isGet) return run();
-
-  const promise = run();
-  baserowGetInflight.set(cacheKey, promise);
-  try {
-    const value = await promise;
-    baserowGetCache.set(cacheKey, {value, expiresAt: Date.now() + BASEROW_GET_CACHE_TTL_MS});
-    return value;
-  } finally {
-    baserowGetInflight.delete(cacheKey);
+    warning.className = "message consumable-order-warning";
+    warning.textContent = "";
   }
 }
 
-function json(data, status, headers) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers,
+async function adjustConsumable(change) {
+  if (!Number.isInteger(change) || change === 0) return;
+  const before = Number(currentConsumable?.balance ?? 0);
+  const after = before + change;
+  if (after < 0) {
+    showConsumableMessage("Lagret kan inte bli negativt. Aktuellt saldo är " + before + ".", true);
+    return;
+  }
+  const sign = change > 0 ? "+" : "";
+  if (!confirm("Registrera " + sign + change + " " + (currentConsumable?.unit || "st") + " för " + (currentConsumable?.article || consumable) + "?\n\nSaldo: " + before + " → " + after)) return;
+  setConsumableButtonsDisabled(true);
+  showConsumableMessage("Sparar " + sign + change + "…", false);
+  try {
+    const result = await apiPost("/consumable/adjust", {articleId:consumable, change});
+    currentConsumable = result.item;
+    renderConsumable();
+    showConsumableMessage("✓ Registrerat " + sign + change + ". Nytt saldo: " + result.after + " " + (result.item?.unit || "st") + ".", false, true);
+    el("consumableCustomChange").value = "";
+  } catch (err) {
+    showConsumableMessage(err.message || String(err), true);
+  } finally {
+    setConsumableButtonsDisabled(false);
+  }
+}
+
+function setConsumableButtonsDisabled(disabled) {
+  document.querySelectorAll(".consumable-adjust").forEach(b => b.disabled = disabled);
+  el("consumableCustomBtn").disabled = disabled;
+}
+
+function showConsumableMessage(message, isError, isSuccess=false) {
+  const box = el("consumableMessage");
+  box.className = "message active " + (isError ? "error" : (isSuccess ? "success-box" : "info"));
+  box.textContent = message;
+}
+
+function showConsumableError(message) {
+  el("consumableLoading").style.display = "none";
+  el("consumableError").textContent = message;
+  el("consumableError").classList.add("active");
+}
+
+document.querySelectorAll(".consumable-adjust").forEach(button => {
+  button.addEventListener("click", () => adjustConsumable(Number(button.dataset.change)));
+});
+el("consumableCustomBtn")?.addEventListener("click", () => {
+  const change = Number(el("consumableCustomChange").value);
+  if (!Number.isInteger(change) || change === 0) {
+    showConsumableMessage("Ange ett heltal, till exempel -7 eller 20.", true);
+    return;
+  }
+  adjustConsumable(change);
+});
+
+async function startQrMode() {
+  if (!/^SKRTJ-\d{5}$/.test(material)) {
+    showError("Ogiltigt Material-ID: " + material);
+    return;
+  }
+
+  try {
+    const row = await apiGet("/material/" + encodeURIComponent(material));
+
+    el("materialId").textContent = row["Material-ID"] || material;
+    el("materialName").textContent = row["Material"] || "Okänt material";
+
+    const stations = Array.isArray(row["Station"]) ? row["Station"] : [];
+    const rakel = Array.isArray(row["Rakelnummer"]) ? row["Rakelnummer"] : [];
+    const reg = Array.isArray(row["Registreringsnummer"]) ? row["Registreringsnummer"] : [];
+
+    let locationText = "Saknar placering";
+    if (rakel.length || reg.length) {
+      const r = rakel.map(x => x.value).filter(Boolean).join(", ");
+      const n = reg.map(x => x.value).filter(Boolean).join(", ");
+      locationText = [r, n].filter(Boolean).join(" – ") || "Fordon";
+    } else if (stations.length) {
+      locationText = stations.map(x => x.value).join(", ");
+    }
+
+    const transportStatus = row["Transportstatus"]?.value || row["Transportstatus"] || "";
+    const transportDest = Array.isArray(row["Transport till station"])
+      ? row["Transport till station"].map(x => x.value).filter(Boolean).join(", ")
+      : "";
+    if (transportStatus === "Under transport") {
+      locationText = "🚚 Under transport" + (transportDest ? " → " + transportDest : "");
+    }
+    el("currentLocation").textContent = locationText;
+    el("lagerType").textContent = transportStatus === "Under transport" ? "Under transport" : (row["Lagertyp"] || "");
+    el("loading").style.display = "none";
+    el("materialCard").style.display = "block";
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+function showError(message) {
+  el("loading").style.display = "none";
+  el("errorMessage").textContent = message;
+  el("errorMessage").classList.add("active");
+}
+
+
+
+let exerciseRules=[];
+async function loadOrders(){
+ const stockBox=el("stockOrders"),exerciseBox=el("exerciseOrders"); if(!stockBox||!exerciseBox)return;
+ try{const d=await apiGet("/orders");const active=(d.orders||[]).filter(o=>o.type==="Övning"?o.status!=="Skickad":!["Klar","Avbruten"].includes(o.status));el("countOrders").textContent=active.length;renderOrderList(stockBox,active.filter(o=>o.type==="Lager"));renderOrderList(exerciseBox,active.filter(o=>o.type==="Övning"));}catch(err){const msg='<div class="message error active">'+escapeHtml(err.message)+'</div>';stockBox.innerHTML=msg;exerciseBox.innerHTML=msg;}
+}
+function renderOrderList(box,orders){box.innerHTML="";if(!orders.length){box.innerHTML='<div class="muted empty">Inga aktiva beställningar.</div>';return;}orders.forEach(order=>{const row=document.createElement("div");row.className="order-row";const isEx=order.type==="Övning";const lines=isEx?(order.lines||[]).map(x=>'<div class="order-line">'+escapeHtml(x.quantity)+' st '+escapeHtml(x.material)+'</div>').join(""):('<strong>'+escapeHtml(order.quantity)+' st '+escapeHtml(order.material)+'</strong>');row.innerHTML='<strong>'+escapeHtml(order.orderId||"Beställning")+'</strong>'+ (isEx?'<div class="order-meta">Övningsdatum: <strong>'+escapeHtml(order.exerciseDate||"–")+'</strong> · Beställare: '+escapeHtml(order.orderedBy||"–")+'</div>':'')+'<div>'+lines+'</div><div class="order-meta">Från '+escapeHtml(order.station||"okänd station")+' · Status: <strong>'+escapeHtml(order.status||"Beställd")+'</strong></div>'+(order.comment?'<div class="order-meta">'+escapeHtml(order.comment)+'</div>':'')+'<div class="order-status-actions"></div>';const actions=row.querySelector(".order-status-actions");const statuses=isEx?(order.status==="Beställd"?["Packad"]:order.status==="Packad"?["Skickad"]:[]):["Beställd","Mottagen","Klar","Avbruten"].filter(x=>x!==order.status);statuses.forEach(status=>{const b=document.createElement("button");b.type="button";b.className=status==="Skickad"||status==="Klar"?"green":status==="Avbruten"?"secondary":"";b.textContent=status;b.addEventListener("click",async()=>{b.disabled=true;try{const response=await fetch(API+"/orders/status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(isEx?{orderId:order.orderId,status}:{rowId:Number(order.id),status})});const d=await response.json();if(!response.ok)throw new Error(d.error||d.message||"Status kunde inte ändras.");await loadOrders();}catch(err){alert("Statusändringen misslyckades: "+err.message);b.disabled=false;}});actions.appendChild(b);});box.appendChild(row);});}
+let currentOrderType="";
+function exerciseRuleOptions(){return exerciseRules.filter(r=>r.active&&Number(r.maxQuantity)>0).sort((a,b)=>a.material.localeCompare(b.material,"sv"));}
+function addExerciseLine(material="",quantity=1){const rules=exerciseRuleOptions();const row=document.createElement("div");row.className="exercise-line";row.innerHTML='<select class="exercise-material">'+rules.map(r=>'<option value="'+escapeHtml(r.material)+'" data-max="'+Number(r.maxQuantity)+'"'+(r.material===material?' selected':'')+'>'+escapeHtml(r.material)+' (max '+Number(r.maxQuantity)+')</option>').join("")+'</select><input class="exercise-quantity" type="number" min="1" value="'+Number(quantity||1)+'"><button type="button" class="secondary mini-button exercise-remove">TA BORT</button>';const sel=row.querySelector(".exercise-material"),qty=row.querySelector(".exercise-quantity");const sync=()=>{const opt=sel.selectedOptions[0];qty.max=opt?.dataset.max||1;if(Number(qty.value)>Number(qty.max))qty.value=qty.max;};sel.addEventListener("change",sync);row.querySelector(".exercise-remove").addEventListener("click",()=>row.remove());sync();el("exerciseLines").appendChild(row);}
+async function openOrderPanel(type){currentOrderType=type;el("orderTitle").textContent=type==="Lager"?"📦 Beställning lager":"🎯 Beställning övning";el("orderMessage").className="message";el("orderMessage").textContent="";const selected=selectedStationIds();const stations=(overviewData?.stations||[]).filter(s=>selected.includes(Number(s.id)));el("orderStation").innerHTML=stations.map(s=>'<option value="'+Number(s.id)+'">'+escapeHtml(s.name)+'</option>').join("");const isEx=type==="Övning";el("stockOrderFields").style.display=isEx?"none":"block";el("exerciseOrderFields").style.display=isEx?"block":"none";if(isEx){try{const d=await apiGet("/exercise-rules");exerciseRules=d.rules||[];}catch(err){el("orderMessage").className="message error active";el("orderMessage").textContent=err.message;return;}el("exerciseLines").innerHTML="";if(exerciseRuleOptions().length)addExerciseLine();else{el("exerciseLines").innerHTML='<div class="muted">Nyköping har inte gjort något material beställningsbart för övning.</div>';}el("exerciseDate").value="";el("exerciseOrderedBy").value="";}else{const materials=[...new Set((overviewData?.material||[]).map(m=>String(m.material||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"sv"));el("orderMaterial").innerHTML=materials.map(name=>'<option value="'+escapeHtml(name)+'">'+escapeHtml(name)+'</option>').join("");el("orderQuantity").value="1";}el("orderComment").value="";el("orderPanel").classList.add("active");el("orderPanel").scrollIntoView({behavior:"smooth",block:"start"});}
+el("orderStockBtn")?.addEventListener("click",()=>openOrderPanel("Lager"));el("orderExerciseBtn")?.addEventListener("click",()=>openOrderPanel("Övning"));el("cancelOrderBtn")?.addEventListener("click",()=>el("orderPanel").classList.remove("active"));el("addExerciseLineBtn")?.addEventListener("click",()=>addExerciseLine());
+el("submitOrderBtn")?.addEventListener("click",async()=>{const stationId=Number(el("orderStation").value),comment=el("orderComment").value.trim();let body={type:currentOrderType,stationId,comment};if(currentOrderType==="Övning"){body.exerciseDate=el("exerciseDate").value;body.orderedBy=el("exerciseOrderedBy").value.trim();body.lines=[...document.querySelectorAll(".exercise-line")].map(r=>({material:r.querySelector(".exercise-material").value,quantity:Number(r.querySelector(".exercise-quantity").value)}));if(!stationId||!body.exerciseDate||!body.orderedBy||!body.lines.length){el("orderMessage").className="message error active";el("orderMessage").textContent="Ange station, övningsdatum, beställare och minst en materialtyp.";return;}}else{body.material=el("orderMaterial").value;body.quantity=Number(el("orderQuantity").value);if(!stationId||!body.material||!Number.isInteger(body.quantity)||body.quantity<1){el("orderMessage").className="message error active";el("orderMessage").textContent="Kontrollera station, material och antal.";return;}}el("submitOrderBtn").disabled=true;el("orderMessage").className="message info active";el("orderMessage").textContent="Skickar beställningen…";try{const response=await fetch(API+"/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await response.json();if(!response.ok)throw new Error(d.error||d.message||"Beställningen kunde inte sparas.");el("orderMessage").className="message info active";el("orderMessage").innerHTML="<strong>✓ "+escapeHtml(d.orderId||"")+" är skickad till Nyköping.</strong>";await loadOrders();}catch(err){el("orderMessage").className="message error active";el("orderMessage").innerHTML="<strong>Beställningen misslyckades.</strong><br>"+escapeHtml(err.message);}finally{el("submitOrderBtn").disabled=false;}});
+
+el("checkinBtn").addEventListener("click", async () => {
+  el("checkoutPanel").classList.remove("active");
+  el("transportPanel").classList.remove("active");
+  el("selectionMessage").classList.remove("active");
+  el("checkinPanel").classList.add("active");
+
+  if (el("stationsList").dataset.loaded) return;
+  el("stationsList").innerHTML = '<div class="loading">Hämtar stationer…</div>';
+
+  try {
+    const rows = await apiGet("/stations");
+    const active = rows.filter(row => row["Aktiv"] === true);
+
+    el("stationsList").innerHTML = "";
+    active.forEach(row => {
+      const b = document.createElement("button");
+      b.className = "choice";
+      b.innerHTML = "<strong>" + escapeHtml(row["Station"] || row["Station-ID"] || "Station") +
+                    "</strong>" + (row["Adress"] ? escapeHtml(row["Adress"]) : "");
+      b.addEventListener("click", () => selectStation(row));
+      el("stationsList").appendChild(b);
+    });
+    el("stationsList").dataset.loaded = "1";
+  } catch (err) {
+    el("stationsList").innerHTML = '<div class="message error active">' + escapeHtml(err.message) + "</div>";
+  }
+});
+
+el("checkoutBtn").addEventListener("click", async () => {
+  el("checkinPanel").classList.remove("active");
+  el("transportPanel").classList.remove("active");
+  el("selectionMessage").classList.remove("active");
+  el("checkoutPanel").classList.add("active");
+
+  if (el("vehiclesList").dataset.loaded) return;
+  el("vehiclesList").innerHTML = '<div class="loading">Hämtar fordon…</div>';
+
+  try {
+    const rows = await apiGet("/vehicles");
+
+    // Hämta materialet på nytt så att vi använder aktuell stationsplacering.
+    const currentMaterial = await apiGet("/material/" + encodeURIComponent(material));
+    const materialStations = Array.isArray(currentMaterial["Station"])
+      ? currentMaterial["Station"].map(x => Number(x.id)).filter(Number.isInteger)
+      : [];
+
+    if (currentMaterial["Lagertyp"] !== "Stationslager" || materialStations.length !== 1) {
+      throw new Error("Materialet måste vara incheckat på ett stationslager före utcheckning.");
+    }
+
+    const currentStationId = materialStations[0];
+
+    const active = rows.filter(row => {
+      if (row["Aktiv"] !== true) return false;
+      const vehicleStations = Array.isArray(row["Station"])
+        ? row["Station"].map(x => Number(x.id)).filter(Number.isInteger)
+        : [];
+      return vehicleStations.length === 1 && vehicleStations[0] === currentStationId;
+    });
+
+    el("vehiclesList").innerHTML = "";
+
+    if (active.length === 0) {
+      el("vehiclesList").innerHTML =
+        '<div class="message error active">Inga aktiva fordon hittades på materialets station.</div>';
+      return;
+    }
+
+    active.forEach(row => {
+      const rakel = Array.isArray(row["Rakelnummer"])
+        ? row["Rakelnummer"].map(x => x.value).filter(Boolean).join(", ")
+        : "";
+      const reg = row["Registreringsnummer"] || row["Fordons-ID"] || "";
+      const type = row["Fordonstyp"]?.value || "";
+      const station = Array.isArray(row["Station"])
+        ? row["Station"].map(x => x.value).filter(Boolean).join(", ")
+        : "";
+
+      const b = document.createElement("button");
+      b.className = "choice";
+      b.innerHTML =
+        "<strong>" + escapeHtml([rakel, reg].filter(Boolean).join(" – ")) + "</strong>" +
+        escapeHtml([type, station].filter(Boolean).join(" • "));
+      b.addEventListener("click", () => selectVehicle(row, rakel, reg));
+      el("vehiclesList").appendChild(b);
+    });
+    el("vehiclesList").dataset.loaded = "1";
+  } catch (err) {
+    el("vehiclesList").innerHTML = '<div class="message error active">' + escapeHtml(err.message) + "</div>";
+  }
+});
+
+
+el("transportBtn").addEventListener("click", async () => {
+  el("checkinPanel").classList.remove("active");
+  el("checkoutPanel").classList.remove("active");
+  el("selectionMessage").classList.remove("active");
+  el("transportPanel").classList.add("active");
+
+  if (el("transportStationsList").dataset.loaded) return;
+  el("transportStationsList").innerHTML = '<div class="loading">Hämtar stationer…</div>';
+
+  try {
+    const rows = await apiGet("/stations");
+    const active = rows.filter(row => row["Aktiv"] === true);
+    el("transportStationsList").innerHTML = "";
+    active.forEach(row => {
+      const b = document.createElement("button");
+      b.className = "choice";
+      const name = row["Station"] || row["Station-ID"] || "Station";
+      b.innerHTML = "<strong>" + escapeHtml(name) + "</strong>" + (row["Adress"] ? escapeHtml(row["Adress"]) : "");
+      b.addEventListener("click", () => selectTransportStation(row));
+      el("transportStationsList").appendChild(b);
+    });
+    el("transportStationsList").dataset.loaded = "1";
+  } catch (err) {
+    el("transportStationsList").innerHTML = '<div class="message error active">' + escapeHtml(err.message) + "</div>";
+  }
+});
+
+async function selectTransportStation(row) {
+  const stationName = row["Station"] || row["Station-ID"] || "vald station";
+  if (!confirm("Markera " + material + " för transport till " + stationName + "?")) return;
+
+  el("selectionMessage").className = "message info active";
+  el("selectionMessage").innerHTML = "<strong>Sparar…</strong><br>Markerar " + escapeHtml(material) +
+    " för transport till " + escapeHtml(stationName) + ".";
+  ["checkinBtn","checkoutBtn","transportBtn"].forEach(id => el(id).disabled = true);
+
+  try {
+    const response = await fetch(API + "/transport", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({materialId:material, stationId:Number(row.id)})
+    });
+    let data;
+    try { data = await response.json(); } catch { throw new Error("API:t gav ett ogiltigt svar."); }
+    if (!response.ok) throw new Error(data.message || data.error || "Transporten kunde inte sparas.");
+
+    el("selectionMessage").className = "message info active";
+    el("selectionMessage").innerHTML = "<strong>✓ Transporten är sparad.</strong><br>" +
+      escapeHtml(data.message || (material + " är under transport till " + stationName + "."));
+    el("currentLocation").textContent = "🚚 Under transport → " + stationName;
+    el("lagerType").textContent = "Under transport";
+    el("transportPanel").classList.remove("active");
+  } catch(err) {
+    el("selectionMessage").className = "message error active";
+    el("selectionMessage").innerHTML = "<strong>Transporten misslyckades.</strong><br>" + escapeHtml(err.message);
+  } finally {
+    ["checkinBtn","checkoutBtn","transportBtn"].forEach(id => el(id).disabled = false);
+  }
+}
+
+async function selectStation(row) {
+  const stationName = row["Station"] || row["Station-ID"] || "vald station";
+
+  if (!confirm("Checka in " + material + " på " + stationName + "?")) {
+    return;
+  }
+
+  el("selectionMessage").className = "message info active";
+  el("selectionMessage").innerHTML =
+    "<strong>Sparar…</strong><br>Checkar in " +
+    escapeHtml(material) + " på " + escapeHtml(stationName) + ".";
+
+  el("checkinBtn").disabled = true;
+  el("checkoutBtn").disabled = true;
+  el("transportBtn").disabled = true;
+
+  try {
+    const response = await fetch(API + "/checkin", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        materialId: material,
+        stationId: Number(row.id)
+      })
+    });
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error("API:t gav ett ogiltigt svar.");
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || "Incheckningen misslyckades.");
+    }
+
+    el("selectionMessage").className = "message info active";
+    el("selectionMessage").innerHTML =
+      "<strong>✓ Incheckningen är sparad.</strong><br>" +
+      escapeHtml(data.message || (material + " är incheckat på " + stationName + "."));
+
+    el("currentLocation").textContent = stationName;
+    el("lagerType").textContent = "Stationslager";
+    el("checkinPanel").classList.remove("active");
+  } catch (err) {
+    el("selectionMessage").className = "message error active";
+    el("selectionMessage").innerHTML =
+      "<strong>Incheckningen misslyckades.</strong><br>" + escapeHtml(err.message);
+  } finally {
+    el("checkinBtn").disabled = false;
+    el("checkoutBtn").disabled = false;
+    el("transportBtn").disabled = false;
+  }
+}
+
+async function selectVehicle(row, rakel, reg) {
+  const vehicleLabel = [rakel, reg].filter(Boolean).join(" – ");
+
+  if (!confirm("Checka ut " + material + " till " + vehicleLabel + "?")) {
+    return;
+  }
+
+  el("selectionMessage").className = "message info active";
+  el("selectionMessage").innerHTML =
+    "<strong>Sparar…</strong><br>Checkar ut " +
+    escapeHtml(material) + " till " + escapeHtml(vehicleLabel) + ".";
+
+  el("checkinBtn").disabled = true;
+  el("checkoutBtn").disabled = true;
+  el("transportBtn").disabled = true;
+
+  try {
+    const response = await fetch(API + "/checkout", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        materialId: material,
+        vehicleId: Number(row.id)
+      })
+    });
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error("API:t gav ett ogiltigt svar.");
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || "Utcheckningen misslyckades.");
+    }
+
+    el("selectionMessage").className = "message info active";
+    el("selectionMessage").innerHTML =
+      "<strong>✓ Utcheckningen är sparad.</strong><br>" +
+      escapeHtml(data.message || (material + " är utcheckat till " + vehicleLabel + "."));
+
+    el("currentLocation").textContent = vehicleLabel;
+    el("lagerType").textContent = "Fordon";
+    el("checkoutPanel").classList.remove("active");
+  } catch (err) {
+    el("selectionMessage").className = "message error active";
+    el("selectionMessage").innerHTML =
+      "<strong>Utcheckningen misslyckades.</strong><br>" + escapeHtml(err.message);
+  } finally {
+    el("checkinBtn").disabled = false;
+    el("checkoutBtn").disabled = false;
+    el("transportBtn").disabled = false;
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+
+const STATION_STORAGE_KEY = "skrtj-selected-stations-v1";
+
+const EXCEL_COLUMNS = [
+  "Material-ID","Material","Kategori","Station","Rakelnummer",
+  "Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"
+];
+
+el("importExcelBtn")?.addEventListener("click", () => {
+  if (typeof XLSX === "undefined") {
+    alert("Excel-biblioteket kunde inte laddas. Kontrollera internetanslutningen och ladda om sidan.");
+    return;
+  }
+  el("excelFileInput").value = "";
+  el("excelFileInput").click();
+});
+
+el("excelFileInput")?.addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const msg = el("excelMessage");
+  msg.className = "message info active";
+  msg.textContent = "Läser Excel-filen…";
+
+  try {
+    const bytes = await file.arrayBuffer();
+    const workbook = XLSX.read(bytes, {type:"array"});
+    const sheet = workbook.Sheets["Brandmaterial"] || workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) throw new Error("Excel-filen saknar ett kalkylblad.");
+
+    const raw = XLSX.utils.sheet_to_json(sheet, {defval:"", raw:false});
+    const rows = raw
+      .map((r, i) => ({...r, __row:i + 2}))
+      .filter(r => EXCEL_COLUMNS.some(k => String(r[k] ?? "").trim() !== ""));
+
+    if (!rows.length) throw new Error("Inga materialrader hittades.");
+    const ids = rows.map(r => String(r["Material-ID"] || "").trim().toUpperCase()).filter(Boolean);
+    const duplicates = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+    if (duplicates.length) throw new Error("Dubbletter i Excel-filen: " + duplicates.join(", "));
+
+    const existing = new Map((overviewData?.material || []).map(m => [String(m.materialId).toUpperCase(), m]));
+    const newCount = ids.filter(id => !existing.has(id)).length;
+    const updateCount = ids.filter(id => existing.has(id)).length;
+
+    const ok = confirm(
+      "Importkontroll\\n\\n" +
+      "Rader: " + rows.length + "\\n" +
+      "Nya: " + newCount + "\\n" +
+      "Befintliga som uppdateras: " + updateCount + "\\n\\n" +
+      "Material som inte finns i Excel-filen lämnas orörda.\\n" +
+      "Tomma importfält raderar inte befintliga värden.\\n\\n" +
+      "Fortsätt med import?"
+    );
+    if (!ok) {
+      msg.className = "message";
+      msg.textContent = "";
+      return;
+    }
+
+    msg.className = "message info active";
+    msg.textContent = "Importerar och kontrollerar mot Baserow…";
+    const response = await fetch(API + "/material/import", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({rows})
+    });
+    let data;
+    try { data = await response.json(); } catch { throw new Error("API:t gav ett ogiltigt svar."); }
+    if (!response.ok) {
+      if (Array.isArray(data.errors)) throw new Error(data.errors.join("\\n"));
+      throw new Error(data.error || data.message || "Importen misslyckades.");
+    }
+
+    msg.className = "message info active";
+    msg.innerHTML = "<strong>✓ Import klar.</strong><br>" +
+      escapeHtml(data.newCount) + " nya · " +
+      escapeHtml(data.updatedCount) + " uppdaterade · " +
+      escapeHtml(data.unchangedCount) + " oförändrade";
+    overviewData = await apiGet("/overview");
+    renderHome();
+  } catch (err) {
+    msg.className = "message error active";
+    msg.innerHTML = "<strong>Importen stoppades.</strong><br>" +
+      escapeHtml(String(err.message || err)).replaceAll("\\n","<br>");
+  }
+});
+
+el("exportExcelBtn")?.addEventListener("click", async () => {
+  const msg = el("excelMessage");
+  try {
+    if (typeof XLSX === "undefined") throw new Error("Excel-biblioteket kunde inte laddas.");
+    msg.className = "message info active";
+    msg.textContent = "Skapar Excel-export…";
+
+    // Hämta fulla materialrader så exporten innehåller kommentarer och länknamn.
+    const materials = overviewData?.material || [];
+    const exportRows = [];
+    for (const m of materials) {
+      let full = {};
+      try { full = await apiGet("/material/" + encodeURIComponent(m.materialId)); } catch {}
+      const linkValue = key => Array.isArray(full[key]) && full[key][0]?.value ? full[key][0].value : "";
+      exportRows.push({
+        "Material-ID": m.materialId || "",
+        "Material": m.material || "",
+        "Kategori": m.category || "",
+        "Station": linkValue("Station"),
+        "Rakelnummer": linkValue("Rakelnummer") || m.rakel || "",
+        "Registreringsnummer": linkValue("Registreringsnummer"),
+        "Kommentar": full["Kommentar"] || m.comment || "",
+        "Aktiv": full["Aktiv"] === false ? false : true,
+        "Transportstatus": full["Transportstatus"]?.value || full["Transportstatus"] || m.transportStatus || "",
+        "Transport till station": linkValue("Transport till station") || m.transportDestination || ""
+      });
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(exportRows, {header:EXCEL_COLUMNS});
+    ws["!cols"] = EXCEL_COLUMNS.map((_,i) => ({wch:[18,24,20,18,16,24,36,12,20,24][i]}));
+    XLSX.utils.book_append_sheet(wb, ws, "Brandmaterial");
+    const date = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, "Brandmaterial_export_" + date + ".xlsx");
+    msg.className = "message info active";
+    msg.textContent = "✓ Excel-export skapad.";
+  } catch(err) {
+    msg.className = "message error active";
+    msg.textContent = "Exporten misslyckades: " + (err.message || err);
+  }
+});
+
+let overviewData = null;
+let consumablesData = [];
+let showAllConsumables = false;
+let pendingConsumableOrder = null;
+let consumableOrdersData = [];
+let consumableLevelsData = [];
+
+async function startHome() {
+  try {
+    const [overview, consumables, consumableOrders, consumableLevels] = await Promise.all([apiGet("/overview"), apiGet("/consumables"), apiGet("/consumable-orders"), apiGet("/consumable-levels")]);
+    overviewData = overview;
+    consumablesData = Array.isArray(consumables?.items) ? consumables.items : [];
+    consumableOrdersData = Array.isArray(consumableOrders?.orders) ? consumableOrders.orders : [];
+    consumableLevelsData = Array.isArray(consumableLevels?.levels) ? consumableLevels.levels : [];
+    renderStationSettings();
+    renderHome();
+  } catch (err) {
+    el("homeLoading").style.display = "none";
+    el("homeError").textContent = err.message;
+    el("homeError").classList.add("active");
+  }
+}
+
+function getSavedStationSelection() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STATION_STORAGE_KEY));
+    if (parsed && parsed.all === true) return { all:true, ids:[] };
+    if (parsed && Array.isArray(parsed.ids) && parsed.ids.length) {
+      return { all:false, ids:parsed.ids.map(Number).filter(Number.isInteger) };
+    }
+  } catch {}
+  return { all:true, ids:[] };
+}
+
+function saveStationSelection(selection) {
+  localStorage.setItem(STATION_STORAGE_KEY, JSON.stringify(selection));
+}
+
+function selectedStationIds() {
+  const saved = getSavedStationSelection();
+  if (saved.all) return overviewData.stations.map(s => Number(s.id));
+  return saved.ids;
+}
+
+function renderStationSettings() {
+  const saved = getSavedStationSelection();
+  el("allStations").checked = saved.all;
+  el("stationChecks").innerHTML = "";
+
+  overviewData.stations.forEach(station => {
+    const label = document.createElement("label");
+    label.className = "check-row";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = station.id;
+    input.checked = saved.all || saved.ids.includes(Number(station.id));
+    input.disabled = saved.all;
+    const span = document.createElement("span");
+    span.textContent = station.name;
+    label.append(input, span);
+    el("stationChecks").appendChild(label);
+  });
+
+  updateSelectedLabel();
+}
+
+function updateSelectedLabel() {
+  const saved = getSavedStationSelection();
+  if (saved.all) {
+    el("selectedStationsLabel").textContent = "Alla stationer";
+    return;
+  }
+  const names = overviewData.stations
+    .filter(s => saved.ids.includes(Number(s.id)))
+    .map(s => s.name);
+  el("selectedStationsLabel").textContent = names.join(", ") || "Ingen station vald";
+}
+
+
+function uniqueMaterialTypes() {
+  const map = new Map();
+  for (const m of (overviewData?.material || [])) {
+    const name = String(m.material || "").trim();
+    if (!name) continue;
+    const key = name.toLocaleLowerCase("sv-SE");
+    if (!map.has(key)) map.set(key, {material:name, category:m.category || ""});
+  }
+  return [...map.values()].sort((a,b) => a.material.localeCompare(b.material, "sv"));
+}
+
+function openStationMaterialPlan(station) {
+  const modal = el("materialPlanModal"), list = el("materialPlanList");
+  el("materialPlanTitle").textContent = station.name + " – materialplan";
+  el("materialPlanSubtitle").textContent = "Alla unika materialtyper från hela Brandmaterial-listan.";
+  const types = uniqueMaterialTypes();
+  const levels = overviewData.stockLevels || [];
+  const actual = overviewData.material || [];
+  list.innerHTML = types.map((t,i) => {
+    const level = levels.find(x => Number(x.stationId) === Number(station.id) &&
+      String(x.material||"").trim().toLocaleLowerCase("sv-SE") === t.material.toLocaleLowerCase("sv-SE"));
+    const count = actual.filter(m => Number(m.stationId) === Number(station.id) &&
+      String(m.material||"").trim().toLocaleLowerCase("sv-SE") === t.material.toLocaleLowerCase("sv-SE") &&
+      m.transportStatus !== "Under transport").length;
+    const active = !!level;
+    const redMax = level?.redBelow != null ? Math.max(0, Number(level.redBelow)-1) : 0;
+    const greenFrom = level?.greenFrom != null ? Number(level.greenFrom) : 2;
+    const noYellow = active ? greenFrom === redMax + 1 : false;
+    const yellowMax = noYellow ? redMax : Math.max(redMax+1, greenFrom-1);
+    const greenMax = level?.max != null ? Number(level.max) : 2;
+    return "<div class='plan-row' data-material='"+escapeHtml(t.material)+"'>" +
+      "<div class='plan-name'><strong>"+escapeHtml(t.material)+"</strong><span>"+escapeHtml(t.category||"")+" · Finns nu: "+count+"</span></div>" +
+      "<label><input class='plan-stocked' type='checkbox' "+(active?"checked":"")+"> Ska finnas</label>" +
+      "<label>🔴 t.o.m.<input class='plan-red' type='number' min='0' value='"+redMax+"'></label>" +
+      "<div class='yellow-level'><label>🟡 t.o.m.<input class='plan-yellow' type='number' min='0' value='"+yellowMax+"'></label>" +
+      "<label class='no-yellow'><input class='plan-no-yellow' type='checkbox' "+(noYellow?"checked":"")+"> Ingen gul</label></div>" +
+      "<label>🟢 MAX<input class='plan-green' type='number' min='1' value='"+greenMax+"'></label>" +
+      "<button class='plan-save' type='button'>SPARA</button></div>";
+  }).join("") || "<p>Inga materialtyper finns i Brandmaterial ännu.</p>";
+
+  list.querySelectorAll(".plan-row").forEach(row => {
+    const checkbox = row.querySelector(".plan-stocked");
+    const noYellowBox = row.querySelector(".plan-no-yellow");
+    const yellowInput = row.querySelector(".plan-yellow");
+    const sync = () => {
+      row.querySelector(".plan-red").disabled = !checkbox.checked;
+      row.querySelector(".plan-green").disabled = !checkbox.checked;
+      noYellowBox.disabled = !checkbox.checked;
+      yellowInput.disabled = !checkbox.checked || noYellowBox.checked;
+    };
+    checkbox.addEventListener("change", sync);
+    noYellowBox.addEventListener("change", sync);
+    sync();
+    row.querySelector(".plan-save").addEventListener("click", async () => {
+      const body = {
+        stationId:station.id, material:row.dataset.material, stocked:checkbox.checked,
+        redMax:Number(row.querySelector(".plan-red").value),
+        noYellow:noYellowBox.checked,
+        yellowMax:noYellowBox.checked ? null : Number(yellowInput.value),
+        greenMax:Number(row.querySelector(".plan-green").value)
+      };
+      try {
+        await apiPost("/stock-level/upsert", body);
+        overviewData = await apiGet("/overview");
+        openStationMaterialPlan(station);
+        renderHome();
+      } catch(e) { alert(e.message || e); }
+    });
+  });
+  modal.classList.remove("hidden");
+}
+
+function openVehicleMaterialPlan(vehicle, label) {
+  const modal = el("materialPlanModal"), list = el("materialPlanList");
+  el("materialPlanTitle").textContent = (label || "Fordon") + " – materialplan";
+  el("materialPlanSubtitle").textContent = "Grön nivå är exakt antal. Alla andra antal visas rött.";
+  const types = uniqueMaterialTypes();
+  const reqs = overviewData.vehicleRequirements || [];
+  const actual = overviewData.material || [];
+  list.innerHTML = types.map(t => {
+    const req = reqs.find(x => Number(x.vehicleId) === Number(vehicle.id) &&
+      String(x.material||"").trim().toLocaleLowerCase("sv-SE") === t.material.toLocaleLowerCase("sv-SE"));
+    const count = actual.filter(m => Number(m.vehicleId) === Number(vehicle.id) &&
+      String(m.material||"").trim().toLocaleLowerCase("sv-SE") === t.material.toLocaleLowerCase("sv-SE")).length;
+    return "<div class='plan-row vehicle-plan-row' data-material='"+escapeHtml(t.material)+"'>" +
+      "<div class='plan-name'><strong>"+escapeHtml(t.material)+"</strong><span>"+escapeHtml(t.category||"")+" · Finns nu: "+count+"</span></div>" +
+      "<label><input class='plan-stocked' type='checkbox' "+(req?"checked":"")+"> Ska finnas</label>" +
+      "<label>🟢 Exakt antal<input class='plan-required' type='number' min='0' value='"+escapeHtml(req?.required ?? 0)+"'></label>" +
+      "<button class='plan-save' type='button'>SPARA</button></div>";
+  }).join("");
+  list.querySelectorAll(".plan-row").forEach(row => {
+    const checkbox=row.querySelector(".plan-stocked"), input=row.querySelector(".plan-required");
+    const sync=()=>input.disabled=!checkbox.checked; checkbox.addEventListener("change",sync); sync();
+    row.querySelector(".plan-save").addEventListener("click", async () => {
+      try {
+        await apiPost("/vehicle-requirement/upsert", {
+          vehicleId:vehicle.id, material:row.dataset.material, stocked:checkbox.checked, required:Number(input.value)
+        });
+        overviewData=await apiGet("/overview");
+        openVehicleMaterialPlan(vehicle,label); renderHome();
+      } catch(e){ alert(e.message||e); }
+    });
+  });
+  modal.classList.remove("hidden");
+}
+
+el("closeMaterialPlanBtn")?.addEventListener("click",()=>el("materialPlanModal").classList.add("hidden"));
+
+
+function isNykopingName(name) {
+  return String(name || "").trim().toLocaleLowerCase("sv-SE") === "nyköping";
+}
+
+function consumableCatalogForStation(station){
+  const nykCatalog=(consumablesData||[]).filter(x=>x.active!==false&&isNykopingName(x.station)&&x.orderable===true);
+  return nykCatalog.map(source=>{
+    const own=(consumablesData||[]).find(x=>x.active!==false&&Number(x.stationId)===Number(station.id)&&String(x.article||"").trim().toLocaleLowerCase("sv-SE")===String(source.article||"").trim().toLocaleLowerCase("sv-SE"));
+    const level=(consumableLevelsData||[]).find(l=>Number(l.stationId)===Number(station.id)&&String(l.articleId||"").toUpperCase()===String(source.articleId||"").toUpperCase());
+    const target=level?Number(level.target||0):0;
+    return {...source,sourceArticleId:source.articleId,stationId:Number(station.id),station:station.name,balance:own?Number(own.balance||0):0,target,ownArticleId:own?.articleId||"",unit:own?.unit||source.unit||"st"};
   });
 }
+
+function renderConsumablesOverview(selectedIds) {
+  const box=el("consumablesOverview"); if(!box)return;
+  const stations=(overviewData?.stations||[]).filter(st=>selectedIds.includes(Number(st.id)));
+  let alertCount=0; box.innerHTML="";
+  for(const station of stations){
+    const nyk=isNykopingName(station.name);
+    const items=nyk
+      ? (consumablesData||[]).filter(x=>x.active!==false&&Number(x.stationId)===Number(station.id)).sort((x,y)=>String(x.article).localeCompare(String(y.article),"sv"))
+      : consumableCatalogForStation(station).sort((x,y)=>String(x.article).localeCompare(String(y.article),"sv"));
+    if(!items.length)continue;
+    const group=document.createElement("div");group.className="consumable-station-group";group.innerHTML="<h4>"+escapeHtml(station.name)+"</h4>";
+    for(const item of items){
+      const room=Math.max(0,Number(item.target||0)-Number(item.balance||0));
+      const canOrder=nyk?item.orderNeeded:(item.orderable===true&&room>0&&Number(item.balance||0)<Number(item.target||0));
+      if(canOrder)alertCount++;
+      const row=document.createElement("div");row.className="consumable-overview-row"+(canOrder?" is-alert":" is-green");
+      const unit=item.unit||"st";
+      let sub=escapeHtml(item.ownArticleId||item.articleId)+" · Saldo "+escapeHtml(item.balance)+" / "+escapeHtml(item.target??"–")+" "+escapeHtml(unit);
+      if(!nyk&&!item.ownArticleId)sub+=" · Ännu inte i stationens lager";
+      row.innerHTML="<div><strong>"+escapeHtml(item.article)+"</strong><div class='muted small'>"+sub+"</div></div>"+
+        "<div class='consumable-overview-balance'>"+escapeHtml(item.balance)+" "+escapeHtml(unit)+"</div>"+
+        (canOrder?"<button class='consumable-overview-action' type='button'>"+(nyk?"BESTÄLL FRÅN LEVERANTÖR":"BESTÄLL FRÅN NYKÖPING")+"</button>":"<div class='consumable-ok'>✓ OK</div>");
+      row.querySelector("button")?.addEventListener("click",()=>openConsumableOrder(item,station));group.appendChild(row);
+    } box.appendChild(group);
+  }
+  el("countConsumableAlerts").textContent=alertCount;
+  const toggle=el("toggleConsumablesBtn"); toggle.textContent=showAllConsumables?"DÖLJ GRÖNA":"VISA ALLA";
+  box.classList.toggle("consumables-show-all",showAllConsumables);
+  if(!box.children.length)box.innerHTML='<div class="muted empty">Inga beställningsbara förbrukningsartiklar finns för valda stationer.</div>';
+}
+
+function openConsumableOrder(item,station){
+  pendingConsumableOrder={item,station}; const nyk=isNykopingName(station.name),unit=item.unit||"st";
+  el("consumableOrderTitle").textContent=item.article+" – "+station.name;
+  el("consumableOrderSubtitle").textContent=nyk?"Extern beställning från leverantör":"Beställning från Nyköpings centrallager";
+  const room=Math.max(0,Number(item.target||0)-Number(item.balance||0));
+  el("consumableOrderDetails").innerHTML=nyk?"<p><strong>Saldo:</strong> "+escapeHtml(item.balance)+" "+escapeHtml(unit)+"<br><strong>Önskat lager:</strong> "+escapeHtml(item.target??"–")+" "+escapeHtml(unit)+"<br><strong>Föreslaget antal:</strong> "+escapeHtml(Math.max(1,Number(item.orderQuantity)||1))+" "+escapeHtml(unit)+"</p>":
+    "<p><strong>Artikel:</strong> "+escapeHtml(item.article)+"<br><strong>Station:</strong> "+escapeHtml(station.name)+"<br><strong>Nuvarande saldo:</strong> "+escapeHtml(item.balance)+" / "+escapeHtml(item.target)+" "+escapeHtml(unit)+"<br><strong>Max att beställa nu:</strong> "+escapeHtml(room)+" "+escapeHtml(unit)+"</p>"+
+    "<label>Antal<input id='consumableInternalQty' type='number' min='1' max='"+escapeHtml(room)+"' step='1' value='1'></label>"+
+    "<label>Beställare<input id='consumableOrderedBy' type='text' maxlength='100' placeholder='För- och efternamn' value='"+escapeHtml(localStorage.getItem("skrtj-consumable-ordered-by")||"")+"'></label>";
+  const supplier=el("consumableSupplierBlock"),link=el("consumableSupplierLink");
+  if(nyk){supplier.style.display="block";supplier.innerHTML="<strong>Leverantör</strong><div class='supplier-grid'><div><strong>Leverantör:</strong> "+escapeHtml(item.supplier||"–")+"</div><div><strong>Kontaktperson:</strong> "+escapeHtml(item.contactPerson||"–")+"</div><div><strong>Telefon:</strong> "+escapeHtml(item.phone||"–")+"</div><div><strong>E-post:</strong> "+escapeHtml(item.email||"–")+"</div><div><strong>Kundnummer:</strong> "+escapeHtml(item.customerNumber||"–")+"</div><div><strong>Avtalsnummer:</strong> "+escapeHtml(item.agreementNumber||"–")+"</div><div><strong>Artikelnummer:</strong> "+escapeHtml(item.supplierArticleNumber||"–")+"</div></div>";if(item.orderUrl){link.href=item.orderUrl;link.style.display="inline-block"}else link.style.display="none";el("submitConsumableOrderBtn").textContent="REGISTRERA BESTÄLLNING"}else{supplier.style.display="none";supplier.innerHTML="";link.style.display="none";el("submitConsumableOrderBtn").textContent="SKICKA BESTÄLLNING"}
+  el("consumableOrderMessage").className="message";el("consumableOrderMessage").textContent="";el("consumableOrderPanel").style.display="block";el("consumableOrderPanel").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+async function reloadConsumableData(){
+  const [consumables,orders]=await Promise.all([apiGet("/consumables"),apiGet("/consumable-orders")]);
+  consumablesData=consumables.items||[];consumableOrdersData=orders.orders||[];renderConsumablesOverview(selectedStationIds());renderConsumableOrders();
+}
+
+function renderConsumableOrders(){
+  const card=el("consumableOrdersCard"),box=el("consumableOrdersList");if(!card||!box)return;
+  const ids=selectedStationIds(), nykSelected=(overviewData?.stations||[]).some(s=>ids.includes(Number(s.id))&&isNykopingName(s.name));
+  card.style.display=nykSelected?"block":"none";if(!nykSelected)return;
+  const active=(consumableOrdersData||[]).filter(o=>!["Mottagen","Avbruten"].includes(o.status));
+  el("countConsumableOrders").textContent=active.length;box.innerHTML="";
+  if(!active.length){box.innerHTML='<div class="muted empty">Inga aktiva stationsbeställningar.</div>';return}
+  active.forEach(o=>{const row=document.createElement("div");row.className="consumable-internal-order";row.innerHTML="<div><strong>"+escapeHtml(o.toStation)+" – "+escapeHtml(o.orderedBy||"Okänd beställare")+"</strong><div>"+escapeHtml(o.article)+" · "+escapeHtml(o.quantity)+" st</div><div class='muted small'>"+escapeHtml(o.orderId)+" · "+escapeHtml(o.status)+"</div></div><div class='consumable-internal-actions'></div>";const actions=row.querySelector(".consumable-internal-actions");const statuses=o.status==="Beställd"?["Skickad","Avbruten"]:o.status==="Skickad"?["Mottagen","Avbruten"]:[];statuses.forEach(status=>{const b=document.createElement("button");b.type="button";b.className=status==="Avbruten"?"secondary":"";b.textContent=status.toUpperCase();b.onclick=async()=>{b.disabled=true;try{await apiPost("/consumable-order/status",{rowId:o.rowId,status});await reloadConsumableData()}catch(err){alert(err.message||err)}finally{b.disabled=false}};actions.appendChild(b)});box.appendChild(row)});
+}
+
+el("toggleConsumablesBtn")?.addEventListener("click",()=>{showAllConsumables=!showAllConsumables;renderConsumablesOverview(selectedStationIds())});
+el("closeConsumableOrderBtn")?.addEventListener("click",()=>{el("consumableOrderPanel").style.display="none";pendingConsumableOrder=null});
+el("submitConsumableOrderBtn")?.addEventListener("click",async()=>{
+  if(!pendingConsumableOrder)return;const {item,station}=pendingConsumableOrder,nyk=isNykopingName(station.name),btn=el("submitConsumableOrderBtn"),msg=el("consumableOrderMessage");btn.disabled=true;msg.className="message info active";msg.textContent="Sparar beställningen…";
+  try{
+    if(nyk){const qty=Math.max(1,Number(item.orderQuantity)||1),result=await apiPost("/orders",{type:"Lager",material:(item.articleId+" – "+item.article),quantity:qty,stationId:Number(station.id),comment:"Förbrukningsartikel – leverantör"+(item.orderComment?" · "+item.orderComment:"")});msg.className="message info active";msg.innerHTML="<strong>✓ Leverantörsbeställningen är registrerad.</strong><br>"+escapeHtml(result.orderId||"");await loadOrders()}
+    else {const qty=Number(el("consumableInternalQty")?.value),orderedBy=String(el("consumableOrderedBy")?.value||"").trim();if(!Number.isInteger(qty)||qty<1)throw new Error("Ange ett giltigt antal.");if(!orderedBy)throw new Error("Ange vem som beställer.");localStorage.setItem("skrtj-consumable-ordered-by",orderedBy);const result=await apiPost("/consumable-order",{articleId:item.sourceArticleId||item.articleId,stationId:Number(station.id),quantity:qty,orderedBy});msg.className="message info active";msg.innerHTML="<strong>✓ "+escapeHtml(result.orderId)+" är skickad till Nyköping.</strong><br>Nyköpings lagersaldo har minskats med "+escapeHtml(qty)+".";await reloadConsumableData()}
+  }catch(err){msg.className="message error active";msg.textContent=err.message||String(err)}finally{btn.disabled=false}
+});
+
+function renderHome() {
+  el("homeLoading").style.display = "none";
+  el("homeContent").style.display = "block";
+
+  const ids = selectedStationIds();
+  const stations = overviewData.stations.filter(s => ids.includes(Number(s.id)));
+  const vehicles = overviewData.vehicles.filter(v => ids.includes(Number(v.stationId)));
+  const vehicleIds = new Set(vehicles.map(v => Number(v.id)));
+  const materialRows = overviewData.material.filter(m =>
+    (m.stationId && ids.includes(Number(m.stationId))) ||
+    (m.vehicleId && vehicleIds.has(Number(m.vehicleId)))
+  );
+
+  const stationStock = materialRows.filter(m => m.storageType === "Stationslager");
+  const vehicleStock = materialRows.filter(m => m.storageType === "Fordon");
+
+  el("countStations").textContent = stations.length;
+  el("countStationStock").textContent = stationStock.length;
+  el("countVehicleStock").textContent = vehicleStock.length;
+
+  renderConsumablesOverview(ids);
+  renderConsumableOrders();
+
+  el("stationOverview").innerHTML = "";
+  stations.forEach(station => {
+    const stock = stationStock.filter(m => Number(m.stationId) === Number(station.id));
+    const card = document.createElement("div");
+    card.className = "overview-card";
+    const levels = (overviewData.stockLevels || []).filter(x => Number(x.stationId) === Number(station.id));
+    const visibleLevels = levels.filter(x => x.status !== "green");
+    const levelRows = levels.map(x =>
+      "<div class='level-row " + (x.status === "green" ? "overview-green-row overview-hidden-green" : "") + "'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
+      escapeHtml(x.material) + "</span><span class='level-count'>" + escapeHtml(x.actual) +
+      (x.max !== null ? "/" + escapeHtml(x.max) : "") + "</span></div>"
+    ).join("");
+    const levelHtml = levels.length
+      ? "<div class='level-list'>" + levelRows + "</div>" +
+        (levels.some(x => x.status === "green") ? "<button class='overview-expand' type='button'>VISA ALLA (" + levels.length + ")</button>" : "")
+      : "";
+    card.innerHTML =
+      "<div><strong>" + escapeHtml(station.name) + "</strong><div class='muted small'>" +
+      stock.length + " material i stationslager</div>" + levelHtml + "</div>";
+    const stationExpand = card.querySelector(".overview-expand");
+    if (stationExpand) stationExpand.addEventListener("click", event => {
+      event.stopPropagation();
+      const hidden = card.querySelectorAll(".overview-green-row");
+      const expanding = [...hidden].some(row => row.classList.contains("overview-hidden-green"));
+      hidden.forEach(row => row.classList.toggle("overview-hidden-green", !expanding));
+      stationExpand.textContent = expanding ? "DÖLJ GRÖNA" : "VISA ALLA (" + levels.length + ")";
+    });
+    el("stationOverview").appendChild(card);
+  });
+
+  el("vehicleOverview").innerHTML = "";
+  vehicles.forEach(vehicle => {
+    const stock = vehicleStock.filter(m => Number(m.vehicleId) === Number(vehicle.id));
+    const type = typeof vehicle.type === "object" ? (vehicle.type?.value || "") : (vehicle.type || "");
+    const label = [vehicle.rakel, vehicle.registration].filter(Boolean).join(" – ");
+    const card = document.createElement("div");
+    card.className = "overview-card";
+    const requirements = (overviewData.vehicleRequirements || []).filter(x => Number(x.vehicleId) === Number(vehicle.id));
+    const overallStatus = requirements.length && requirements.every(x => x.status === "green") ? "green" : "red";
+    const reqRows = requirements.map(x =>
+      "<div class='level-row " + (x.status === "green" ? "overview-green-row overview-hidden-green" : "") + "'><span><i class='status-dot " + escapeHtml(x.status) + "'></i>" +
+      escapeHtml(x.material) + "</span><span class='level-count'>" + escapeHtml(x.actual) + "/" +
+      escapeHtml(x.required ?? "–") + "</span></div>"
+    ).join("");
+    const reqHtml = requirements.length
+      ? "<div class='level-list'>" + reqRows + "</div>" +
+        (requirements.some(x => x.status === "green") ? "<button class='overview-expand' type='button'>VISA ALLA (" + requirements.length + ")</button>" : "")
+      : "<div class='muted small'>Inga materialkrav registrerade</div>";
+    card.innerHTML =
+      "<div><strong><i class='status-dot " + overallStatus + "'></i>" + escapeHtml(label || "Fordon") +
+      "</strong><div class='muted small'>" + escapeHtml(type) + (type ? " • " : "") +
+      stock.length + " material</div>" + reqHtml + "</div>";
+    const vehicleExpand = card.querySelector(".overview-expand");
+    if (vehicleExpand) vehicleExpand.addEventListener("click", event => {
+      event.stopPropagation();
+      const hidden = card.querySelectorAll(".overview-green-row");
+      const expanding = [...hidden].some(row => row.classList.contains("overview-hidden-green"));
+      hidden.forEach(row => row.classList.toggle("overview-hidden-green", !expanding));
+      vehicleExpand.textContent = expanding ? "DÖLJ GRÖNA" : "VISA ALLA (" + requirements.length + ")";
+    });
+    el("vehicleOverview").appendChild(card);
+  });
+
+  if (!vehicles.length) {
+    el("vehicleOverview").innerHTML = '<div class="muted empty">Inga fordon registrerade för valda stationer.</div>';
+  }
+
+  // Material under transport visas separat. Det räknas inte som stationslager eller fordonsmaterial.
+  const transports = (overviewData.material || []).filter(m =>
+    m.transportStatus === "Under transport" || m.storageType === "Transport"
+  );
+  const visibleTransports = transports.filter(m =>
+    !m.transportDestinationId || ids.includes(Number(m.transportDestinationId))
+  );
+
+  el("countTransport").textContent = visibleTransports.length;
+  el("transportOverview").innerHTML = "";
+
+  if (!visibleTransports.length) {
+    el("transportOverview").innerHTML =
+      '<div class="muted empty">Inget material är under transport till valda stationer.</div>';
+  } else {
+    visibleTransports
+      .sort((a,b) => a.materialId.localeCompare(b.materialId, "sv"))
+      .forEach(item => {
+        const row = document.createElement("div");
+        row.className = "transport-item";
+        const destination = item.transportDestination || "Destination saknas";
+        row.innerHTML =
+          "<div><strong>" + escapeHtml(item.materialId) + " – " + escapeHtml(item.material) +
+          "</strong><div class='transport-note'>🚚 Under transport → <span class='transport-destination'>" +
+          escapeHtml(destination) + "</span></div></div>" +
+          "<button class='mini-button' type='button'>Öppna</button>";
+
+        const openMaterial = () => {
+          location.href = location.pathname + "?material=" + encodeURIComponent(item.materialId);
+        };
+        row.addEventListener("click", openMaterial);
+        row.querySelector("button").addEventListener("click", event => {
+          event.stopPropagation();
+          openMaterial();
+        });
+        el("transportOverview").appendChild(row);
+      });
+  }
+}
+
+function showMaterialList(title, rows) {
+  el("detailTitle").textContent = title;
+  el("detailList").innerHTML = "";
+  if (!rows.length) {
+    el("detailList").innerHTML = '<div class="muted empty">Inget material.</div>';
+  } else {
+    rows.sort((a,b) => a.materialId.localeCompare(b.materialId, "sv")).forEach(item => {
+      const div = document.createElement("div");
+      div.className = "material-row";
+      div.innerHTML = "<strong>" + escapeHtml(item.materialId) + "</strong><span>" +
+        escapeHtml(item.material) + (item.comment ? " • " + escapeHtml(item.comment) : "") +
+        "</span><span class='muted small'>Tryck för att öppna materialet</span>";
+      div.tabIndex = 0;
+      div.setAttribute("role", "button");
+      const openMaterial = () => {
+        location.href = location.pathname + "?material=" + encodeURIComponent(item.materialId);
+      };
+      div.addEventListener("click", openMaterial);
+      div.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openMaterial();
+        }
+      });
+      el("detailList").appendChild(div);
+    });
+  }
+  el("detailPanel").classList.add("active");
+  el("detailPanel").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function openSettings() {
+  renderStationSettings();
+  el("settingsPanel").classList.add("active");
+  el("settingsPanel").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function saveSettingsFromUi() {
+  const all = el("allStations").checked;
+  const ids = [...el("stationChecks").querySelectorAll("input:checked")].map(x => Number(x.value));
+  if (!all && ids.length === 0) {
+    alert("Välj minst en station eller Alla stationer.");
+    return;
+  }
+  saveStationSelection({all, ids: all ? [] : ids});
+  el("settingsPanel").classList.remove("active");
+  renderStationSettings();
+  renderHome();
+}
+
+
+function populateAddMaterialForm() {
+  const stationSelect = el("newMaterialStation");
+  stationSelect.innerHTML = "";
+
+  const savedIds = selectedStationIds();
+  const orderedStations = [...overviewData.stations].sort((a, b) => {
+    const aSelected = savedIds.includes(Number(a.id)) ? 0 : 1;
+    const bSelected = savedIds.includes(Number(b.id)) ? 0 : 1;
+    return aSelected - bSelected || a.name.localeCompare(b.name, "sv");
+  });
+
+  orderedStations.forEach(station => {
+    const option = document.createElement("option");
+    option.value = station.id;
+    option.textContent = station.name;
+    stationSelect.appendChild(option);
+  });
+
+  const categories = [...new Set(
+    overviewData.material.map(item => item.category).filter(Boolean)
+  )].sort((a,b) => a.localeCompare(b, "sv"));
+
+  el("categorySuggestions").innerHTML = "";
+  categories.forEach(category => {
+    const option = document.createElement("option");
+    option.value = category;
+    el("categorySuggestions").appendChild(option);
+  });
+}
+
+function openAddMaterial() {
+  populateAddMaterialForm();
+  el("createMaterialMessage").className = "message";
+  el("createdQr").style.display = "none";
+  el("addMaterialPanel").classList.add("active");
+  el("addMaterialPanel").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function closeAddMaterial() {
+  el("addMaterialPanel").classList.remove("active");
+}
+
+async function createMaterial() {
+  const materialName = el("newMaterialName").value.trim();
+  const category = el("newMaterialCategory").value.trim();
+  const stationId = Number(el("newMaterialStation").value);
+  const comment = el("newMaterialComment").value.trim();
+
+  if (!materialName) {
+    alert("Ange material.");
+    el("newMaterialName").focus();
+    return;
+  }
+  if (!category) {
+    alert("Ange kategori.");
+    el("newMaterialCategory").focus();
+    return;
+  }
+  if (!Number.isInteger(stationId) || stationId <= 0) {
+    alert("Välj station.");
+    return;
+  }
+
+  const station = overviewData.stations.find(s => Number(s.id) === stationId);
+  const stationName = station?.name || "vald station";
+
+  if (!confirm("Skapa nytt brandmaterial och placera det i " + stationName + "?")) {
+    return;
+  }
+
+  el("createMaterialBtn").disabled = true;
+  el("createMaterialMessage").className = "message info active";
+  el("createMaterialMessage").innerHTML = "<strong>Sparar…</strong><br>Skapar nytt brandmaterial.";
+
+  try {
+    const response = await fetch(API + "/material", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({material: materialName, category, comment, stationId})
+    });
+
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error("API:t gav ett ogiltigt svar."); }
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || "Materialet kunde inte skapas.");
+    }
+
+    el("createMaterialMessage").className = "message success-box active";
+    el("createMaterialMessage").innerHTML =
+      "<strong>✓ " + escapeHtml(data.materialId) + " har skapats.</strong><br>" +
+      escapeHtml(data.message || "");
+
+    const materialUrl =
+      location.origin + location.pathname + "?material=" + encodeURIComponent(data.materialId);
+    el("createdQrId").textContent = data.materialId;
+    window.lastCreatedMaterialName = materialName;
+    el("createdQrImage").src =
+      "https://quickchart.io/qr?size=300&ecLevel=H&margin=2&text=" + encodeURIComponent(materialUrl);
+    el("createdQr").style.display = "block";
+
+    el("newMaterialName").value = "";
+    el("newMaterialCategory").value = "";
+    el("newMaterialComment").value = "";
+
+    overviewData = await apiGet("/overview");
+    renderStationSettings();
+    renderHome();
+    populateAddMaterialForm();
+  } catch (err) {
+    el("createMaterialMessage").className = "message error active";
+    el("createMaterialMessage").innerHTML =
+      "<strong>Kunde inte skapa materialet.</strong><br>" + escapeHtml(err.message);
+  } finally {
+    el("createMaterialBtn").disabled = false;
+  }
+}
+
+
+function printMaterialLabel(materialId, materialName) {
+  if (!materialId) return;
+
+  const materialUrl =
+    location.origin + location.pathname + "?material=" + encodeURIComponent(materialId);
+
+  // Hög felkorrigering för att tåla det vita textfältet i QR-kodens centrum.
+  const qrSrc =
+    "https://quickchart.io/qr?size=500&ecLevel=H&margin=2&text=" +
+    encodeURIComponent(materialUrl);
+
+  const safeId = escapeHtml(materialId);
+  const safeName = escapeHtml(materialName || "");
+
+  const w = window.open("", "_blank", "width=520,height=620");
+  if (!w) {
+    alert("Webbläsaren blockerade utskriftsfönstret. Tillåt popup-fönster och försök igen.");
+    return;
+  }
+
+  w.document.write(`<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<title>${safeId} – QR-etikett</title>
+<style>
+  @page { size: 40mm 40mm; margin: 2mm; }
+  html,body { margin:0; padding:0; font-family:Arial,Helvetica,sans-serif; background:#fff; }
+  .label {
+    width:36mm; height:36mm;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  .qr {
+    width:34mm; height:34mm;
+    position:relative;
+  }
+  .qr img {
+    width:34mm; height:34mm;
+    display:block;
+    image-rendering:pixelated;
+  }
+  .qrtext {
+    position:absolute;
+    left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    background:#fff;
+    color:#000;
+    text-align:center;
+    padding:0.8mm 1mm;
+    line-height:1.05;
+    white-space:nowrap;
+    font-weight:700;
+    max-width:19mm;
+  }
+  .id { font-size:6.5pt; }
+  .name {
+    font-size:6pt;
+    margin-top:.5mm;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:17mm;
+  }
+</style>
+</head>
+<body>
+  <div class="label">
+    <div class="qr">
+      <img src="${qrSrc}" alt="QR-kod">
+      <div class="qrtext">
+        <div class="id">${safeId}</div>
+        <div class="name">${safeName}</div>
+      </div>
+    </div>
+  </div>
+<script>
+window.onload = () => setTimeout(() => window.print(), 500);
+<\/script>
+</body>
+</html>`);
+  w.document.close();
+}
+
+function printConsumableShelfQr() {
+  if (!currentConsumable) return;
+  const articleId = currentConsumable.articleId || consumable;
+  const articleName = currentConsumable.article || "";
+  const station = currentConsumable.station || "";
+  const qrUrl = location.origin + location.pathname + "?forbrukning=" + encodeURIComponent(articleId);
+  const qrSrc = "https://quickchart.io/qr?size=700&ecLevel=H&margin=2&text=" + encodeURIComponent(qrUrl);
+  const w = window.open("", "_blank", "width=700,height=800");
+  if (!w) { alert("Webbläsaren blockerade utskriftsfönstret. Tillåt popup-fönster och försök igen."); return; }
+  w.document.write(`<!DOCTYPE html><html lang="sv"><head><meta charset="UTF-8"><title>${escapeHtml(articleId)} – Hyll-QR</title><style>
+  @page{size:A6 portrait;margin:8mm}body{margin:0;font-family:Arial,Helvetica,sans-serif;text-align:center;color:#111}.label{border:2px solid #2a3768;padding:8mm}.title{font-size:22pt;font-weight:700;margin:0 0 2mm}.station{font-size:13pt;margin-bottom:5mm}.qr{width:75mm;height:75mm;margin:0 auto}.qr img{width:100%;height:100%;display:block}.id{font-size:14pt;font-weight:700;margin-top:4mm}.hint{font-size:11pt;margin-top:3mm}
+  </style></head><body><div class="label"><div class="title">${escapeHtml(articleName)}</div><div class="station">${escapeHtml(station)}</div><div class="qr"><img src="${qrSrc}" alt="QR-kod"></div><div class="id">${escapeHtml(articleId)}</div><div class="hint">Skanna för uttag eller påfyllning</div></div><script>window.onload=()=>setTimeout(()=>window.print(),500);<\/script></body></html>`);
+  w.document.close();
+}
+
+el("printConsumableQrBtn")?.addEventListener("click", printConsumableShelfQr);
+
+function printCreatedQr() {
+  printMaterialLabel(
+    el("createdQrId").textContent.trim(),
+    window.lastCreatedMaterialName || ""
+  );
+}
+
+function printExistingQr() {
+  printMaterialLabel(
+    el("materialId").textContent.trim() || material,
+    el("materialName").textContent.trim()
+  );
+}
+
+el("printQrBtn")?.addEventListener("click", printCreatedQr);
+el("printExistingQrBtn")?.addEventListener("click", printExistingQr);
+
+el("addMaterialBtn")?.addEventListener("click", openAddMaterial);
+el("closeAddMaterialBtn")?.addEventListener("click", closeAddMaterial);
+el("cancelAddMaterialBtn")?.addEventListener("click", closeAddMaterial);
+el("createMaterialBtn")?.addEventListener("click", createMaterial);
+
+el("settingsBtn")?.addEventListener("click", openSettings);
+el("closeSettingsBtn")?.addEventListener("click", () => el("settingsPanel").classList.remove("active"));
+el("saveSettingsBtn")?.addEventListener("click", saveSettingsFromUi);
+el("closeDetailBtn")?.addEventListener("click", () => el("detailPanel").classList.remove("active"));
+el("allStations")?.addEventListener("change", () => {
+  const all = el("allStations").checked;
+  el("stationChecks").querySelectorAll("input").forEach(input => {
+    input.disabled = all;
+    if (all) input.checked = true;
+    else input.checked = false;
+  });
+});
+
+if (el("stockOrders")) loadOrders();
+
+
+// Excel-knappar: explicit init efter att hela sidan och appen är laddad.
+(function initExcelButtons() {
+  const importBtn = document.getElementById("importExcelBtn");
+  const exportBtn = document.getElementById("exportExcelBtn");
+  const templateBtn = document.getElementById("downloadTemplateBtn");
+  const fileInput = document.getElementById("excelFileInput");
+
+  function requireXlsx() {
+    if (typeof XLSX === "undefined") {
+      alert("Excel-funktionen kunde inte laddas. Ladda om sidan och försök igen.");
+      return false;
+    }
+    return true;
+  }
+
+  if (importBtn && fileInput) {
+    importBtn.onclick = function() {
+      if (!requireXlsx()) return;
+      fileInput.value = "";
+      fileInput.click();
+    };
+  }
+
+  if (exportBtn) {
+    exportBtn.onclick = async function() {
+      if (!requireXlsx()) return;
+      const msg = document.getElementById("excelMessage");
+      try {
+        msg.className = "message info active";
+        msg.textContent = "Skapar Excel-export…";
+
+        const currentOverview = await apiGet("/overview");
+        const materials = currentOverview.material || [];
+        const rows = [];
+
+        for (const m of materials) {
+          let full = {};
+          try { full = await apiGet("/material/" + encodeURIComponent(m.materialId)); } catch (_) {}
+          const linkValue = key =>
+            Array.isArray(full[key]) && full[key][0]?.value ? String(full[key][0].value) : "";
+
+          rows.push({
+            "Material-ID": m.materialId || "",
+            "Material": m.material || "",
+            "Kategori": m.category || "",
+            "Station": linkValue("Station"),
+            "Rakelnummer": linkValue("Rakelnummer") || m.rakel || "",
+            "Registreringsnummer": linkValue("Registreringsnummer"),
+            "Kommentar": full["Kommentar"] || m.comment || "",
+            "Aktiv": full["Aktiv"] === false ? false : true,
+            "Transportstatus": full["Transportstatus"]?.value || full["Transportstatus"] || m.transportStatus || "",
+            "Transport till station": linkValue("Transport till station") || m.transportDestination || ""
+          });
+        }
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(rows, {header: EXCEL_COLUMNS});
+        ws["!cols"] = EXCEL_COLUMNS.map((_,i) => ({wch:[18,24,20,18,16,24,36,12,20,24][i]}));
+        XLSX.utils.book_append_sheet(wb, ws, "Brandmaterial");
+        XLSX.writeFile(wb, "Brandmaterial_export_" + new Date().toISOString().slice(0,10) + ".xlsx");
+
+        msg.className = "message info active";
+        msg.textContent = "✓ Excel-export skapad.";
+      } catch (err) {
+        msg.className = "message error active";
+        msg.textContent = "Exporten misslyckades: " + (err.message || err);
+      }
+    };
+  }
+
+  if (templateBtn) {
+    templateBtn.onclick = function() {
+      try {
+        const base64Data = "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";
+        const binary = atob(base64Data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+        const blob = new Blob([bytes], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "Brandmaterial_importmall.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      } catch (err) {
+        alert("Mallen kunde inte laddas ner: " + (err.message || err));
+      }
+    };
+  }
+})();
+
