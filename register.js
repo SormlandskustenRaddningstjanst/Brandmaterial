@@ -143,12 +143,28 @@ $("cancelMaterialBtn").addEventListener("click",closeNewMaterial);
 $("saveMaterialBtn").addEventListener("click",createMaterial);
 
 
+
+function isNykopingStationId(stationId){
+ const station=(data?.stations||[]).find(s=>Number(s.id)===Number(stationId));
+ return String(station?.name||"").trim().toLocaleLowerCase("sv-SE")==="nyköping";
+}
+function syncConsumableSupplierFields(){
+ const show=isNykopingStationId(Number($("newConsumableStation")?.value));
+ ["newConsumableSupplier","newConsumableContact","newConsumablePhone","newConsumableEmail","newConsumableCustomerNo","newConsumableAgreementNo","newConsumableSupplierNo","newConsumableOrderUrl","newConsumableOrderComment"].forEach(id=>{
+  const node=$(id), label=node?.closest("label"); if(label) label.style.display=show?"":"none";
+ });
+ const note=$("newConsumableSupplierNote"); if(note) note.remove();
+ if(!show && $("newConsumableStation")){
+  const n=document.createElement("div"); n.id="newConsumableSupplierNote"; n.className="muted full-width"; n.textContent="Leverantörsuppgifter hanteras endast av Nyköping.";
+  $("newConsumableStation").closest("label")?.insertAdjacentElement("afterend",n);
+ }
+}
 function openNewConsumable(){
  const panel=$("newConsumablePanel"),station=$("newConsumableStation");
  station.innerHTML=(data.stations||[]).filter(x=>x.active).map(x=>"<option value='"+x.id+"'>"+esc(x.name)+"</option>").join("");
  const cats=[...new Set((data.consumables||[]).map(x=>String(x.category||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"sv"));
  $("consumableCategorySuggestions").innerHTML=cats.map(x=>"<option value='"+esc(x)+"'></option>").join("");
- $("newConsumableMessage").className="message";panel.style.display="block";panel.scrollIntoView({behavior:"smooth",block:"nearest"});$("newConsumableName").focus();
+ $("newConsumableMessage").className="message";panel.style.display="block";syncConsumableSupplierFields();panel.scrollIntoView({behavior:"smooth",block:"nearest"});$("newConsumableName").focus();
 }
 function closeNewConsumable(){$("newConsumablePanel").style.display="none"}
 async function refreshConsumables(){const d=await getJson("/consumables");data.consumables=d.items||[];updateCounts();render()}
@@ -173,5 +189,6 @@ async function createConsumable(){
  }catch(err){m.className="message active error";m.textContent=err.message||err}finally{btn.disabled=false}
 }
 $("newConsumableBtn").addEventListener("click",openNewConsumable);
+$("newConsumableStation")?.addEventListener("change",syncConsumableSupplierFields);
 $("cancelConsumableBtn").addEventListener("click",closeNewConsumable);
 $("saveConsumableBtn").addEventListener("click",createConsumable);
