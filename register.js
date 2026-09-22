@@ -7,12 +7,12 @@ async function postJson(path,body){const r=await fetch(API+path,{method:"POST",h
 function boolText(v){return v?"Ja":"Nej"}
 const views={
  stations:{title:"Stationer",help:"Stationsnummer och stationsnamn.",columns:["Stationsnummer","Station","Aktiv"],headers:["Stationsnummer","Station","Aktiv"],endpoint:"/stations/import"},
- vehicles:{title:"Fordon",help:"Rakelnummer hör till fordonet.",columns:["Rakelnummer","Registreringsnummer","Fordonstyp","Station","Aktiv"],headers:["Rakelnummer","Registreringsnummer","Fordonstyp","Station","Aktiv"],endpoint:"/vehicles/import"},
+ vehicles:{title:"Fordon",help:"Rakelnummer hör till fordonet. Fordonskategori hanteras här i registret.",columns:["Rakelnummer","Registreringsnummer","Fordonskategori","Station","Aktiv"],headers:["Rakelnummer","Registreringsnummer","Fordonskategori","Station","Aktiv"],endpoint:"/vehicles/import"},
  material:{title:"Brandmaterial",help:"Hela listan med individuella Material-ID.",columns:["Material-ID","Material","Kategori","Station","Rakelnummer","Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"],headers:["Material-ID","Material","Kategori","Station","Rakelnummer","Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"],endpoint:"/material/import"}
 };
 function rowsFor(view){
  if(view==="stations")return data.stations.map(x=>({"Stationsnummer":x.stationNumber,"Station":x.name,"Aktiv":boolText(x.active)}));
- if(view==="vehicles")return data.vehicles.map(x=>({"Rakelnummer":x.rakel,"Registreringsnummer":x.registration,"Fordonstyp":x.type,"Station":x.station,"Aktiv":boolText(x.active)}));
+ if(view==="vehicles")return data.vehicles.map(x=>({"Rakelnummer":x.rakel,"Registreringsnummer":x.registration,"Fordonskategori":x.type,"Station":x.station,"Aktiv":boolText(x.active),"__id":x.id,"__categoryId":x.categoryId}));
  return data.material.map(x=>({"Material-ID":x.materialId,"Material":x.material,"Kategori":x.category,"Station":x.station,"Rakelnummer":x.rakel,"Registreringsnummer":x.registration,"Kommentar":x.comment,"Aktiv":boolText(x.active),"Transportstatus":x.transportStatus,"Transport till station":x.transportDestination}));
 }
 function render(){
@@ -21,11 +21,38 @@ function render(){
  $("tableHead").innerHTML="<tr>"+cfg.headers.map(h=>"<th>"+esc(h)+"</th>").join("")+"</tr>";
  const rows=rowsFor(currentView).filter(r=>!q||Object.values(r).some(v=>String(v).toLocaleLowerCase("sv-SE").includes(q)));
  $("tableBody").innerHTML=rows.map(r=>"<tr>"+cfg.columns.map((c,i)=>{
-   let v=esc(r[c]); if(currentView==="material"&&c==="Material-ID"&&r[c])v="<a class='material-link' href='./?material="+encodeURIComponent(r[c])+"'>"+v+"</a>";
+   let v=esc(r[c]);
+   if(currentView==="material"&&c==="Material-ID"&&r[c])v="<a class='material-link' href='./?material="+encodeURIComponent(r[c])+"'>"+v+"</a>";
+   if(currentView==="vehicles"&&c==="Fordonskategori"){
+     const options=(data.vehicleCategories||[]).filter(x=>x.active).map(x=>"<option value='"+x.id+"' "+(Number(x.id)===Number(r.__categoryId)?"selected":"")+">"+esc(x.name)+"</option>").join("");
+     v="<select class='vehicle-category-select' data-vehicle-id='"+r.__id+"'><option value=''>— Välj kategori —</option>"+options+"</select>";
+   }
    return "<td>"+v+"</td>";
  }).join("")+"</tr>").join("") || "<tr><td colspan='"+cfg.columns.length+"'>Inga poster hittades.</td></tr>";
 }
-function openView(view){currentView=view;$("listPanel").style.display="block";$("searchInput").value="";$("importMessage").className="message";render();$("listPanel").scrollIntoView({behavior:"smooth",block:"start"})}
+function openView(view){currentView=view;$("listPanel").style.display="block";$("searchInput").value="";$("importMessage").className="message";$("newCategoryBtn").style.display=view==="vehicles"?"inline-block":"none";$("categoryPanel").style.display="none";render();$("listPanel").scrollIntoView({behavior:"smooth",block:"start"})}
+function renderCategoryList(){
+ const list=(data.vehicleCategories||[]).filter(x=>x.active);
+ $("categoryList").innerHTML=list.length?"<strong>Befintliga kategorier:</strong> "+list.map(x=>"<span>"+esc(x.name)+"</span>").join(""):"Inga kategorier skapade ännu.";
+}
+async function createCategory(){
+ const name=$("newCategoryName").value.trim(),m=$("categoryMessage");
+ if(!name){m.className="message active error";m.textContent="Ange ett kategorinamn.";return}
+ m.className="message active";m.textContent="Skapar…";
+ try{
+   const result=await postJson("/vehicle-categories",{name});
+   data=await getJson("/register-data");updateCounts();renderCategoryList();render();
+   $("newCategoryName").value="";
+   m.className="message active ok";m.textContent=result.created?"Kategorin skapades.":"Kategorin finns redan och är tillgänglig.";
+ }catch(err){m.className="message active error";m.textContent=err.message||err}
+}
+async function setVehicleCategory(vehicleId,categoryId,select){
+ if(!categoryId)return;
+ select.disabled=true;
+ try{await postJson("/vehicle/category",{vehicleId:Number(vehicleId),categoryId:Number(categoryId)});data=await getJson("/register-data");render()}
+ catch(err){alert("Kunde inte spara fordonskategori: "+(err.message||err));data=await getJson("/register-data");render()}
+ finally{select.disabled=false}
+}
 function exportExcel(){
  const cfg=views[currentView],rows=rowsFor(currentView),wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet(rows,{header:cfg.columns});
  XLSX.utils.book_append_sheet(wb,ws,cfg.title.slice(0,31));XLSX.writeFile(wb,cfg.title+"_export_"+new Date().toISOString().slice(0,10)+".xlsx");
@@ -33,7 +60,7 @@ function exportExcel(){
 function templateExcel(){
  const cfg=views[currentView];let sample={};
  if(currentView==="stations")sample={"Stationsnummer":"241-3000","Station":"Nyköping","Aktiv":"Ja"};
- if(currentView==="vehicles")sample={"Rakelnummer":"3010","Registreringsnummer":"NTE11B","Fordonstyp":"Släckbil","Station":"Nyköping","Aktiv":"Ja"};
+ if(currentView==="vehicles")sample={"Rakelnummer":"3010","Registreringsnummer":"NTE11B","Fordonskategori":"Släckbil","Station":"Nyköping","Aktiv":"Ja"};
  if(currentView==="material")sample={"Material-ID":"SKRTJ-00001","Material":"Exempel","Kategori":"Verktyg","Station":"Nyköping","Rakelnummer":"","Registreringsnummer":"","Kommentar":"","Aktiv":"Ja","Transportstatus":"Ingen transport","Transport till station":""};
  const wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet([sample],{header:cfg.columns});XLSX.utils.book_append_sheet(wb,ws,cfg.title.slice(0,31));XLSX.writeFile(wb,cfg.title+"_importmall.xlsx");
 }
@@ -52,4 +79,9 @@ document.querySelectorAll(".register-tile").forEach(b=>b.addEventListener("click
 $("closeList").onclick=()=>{$("listPanel").style.display="none";currentView=null};
 $("searchInput").addEventListener("input",render);$("exportBtn").onclick=exportExcel;$("templateBtn").onclick=templateExcel;
 $("importBtn").onclick=()=>$("fileInput").click();$("fileInput").addEventListener("change",async e=>{try{if(e.target.files[0])await importFile(e.target.files[0])}catch(err){const m=$("importMessage");m.className="message active error";m.textContent=err.message||err}finally{e.target.value=""}});
+$("newCategoryBtn").onclick=()=>{$("categoryPanel").style.display="block";$("categoryMessage").className="message";renderCategoryList();$("newCategoryName").focus()};
+$("cancelCategoryBtn").onclick=()=>{$("categoryPanel").style.display="none"};
+$("saveCategoryBtn").onclick=createCategory;
+$("newCategoryName").addEventListener("keydown",e=>{if(e.key==="Enter")createCategory()});
+$("tableBody").addEventListener("change",e=>{if(e.target.classList.contains("vehicle-category-select"))setVehicleCategory(e.target.dataset.vehicleId,e.target.value,e.target)});
 (async()=>{try{data=await getJson("/register-data");updateCounts();$("registerLoading").style.display="none";$("registerContent").style.display="block"}catch(err){$("registerLoading").style.display="none";$("registerError").className="message active error";$("registerError").textContent="Kunde inte hämta register: "+(err.message||err)}})();
