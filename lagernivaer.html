@@ -26,15 +26,20 @@
 
   <section class="hero">
     <h2>Lagernivåer</h2>
-    <p>Ställ in lagernivåer för de stationer du har valt under Mina stationer på Lageröversikten.</p>
+    <p>Lagernivåerna styrs av valet Min station på Lageröversikten.</p>
   </section>
 
   <div id="loading" class="card">Hämtar lagernivåer…</div>
   <div id="error" class="message error"></div>
 
   <section id="content" style="display:none">
-    <div class="selector-card card">
-      <label id="selectorLabel" for="targetSelect">Min station</label>
+    <div class="type-switch">
+      <button id="stationsTab" class="type-button active" type="button">🏢 STATION</button>
+      <button id="vehiclesTab" class="type-button" type="button">🚒 FORDON</button>
+    </div>
+
+    <div id="selectorCard" class="selector-card card">
+      <label id="selectorLabel" for="targetSelect">Fordon på min station</label>
       <select id="targetSelect"></select>
     </div>
 
