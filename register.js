@@ -71,7 +71,11 @@ async function importFile(file){
  if(!ok)return;
  const msg=$("importMessage");msg.className="message active";msg.textContent="Importerar…";
  const result=await postJson(cfg.endpoint,{rows});
- msg.className="message active ok";msg.textContent="Klart. Nya: "+(result.newCount||0)+" · Uppdaterade: "+(result.updatedCount||0)+(result.createdRakelCount?" · Nya Rakelnummer: "+result.createdRakelCount:"");
+ msg.className="message active ok";
+ let parts=["Import klar ✓","Nya: "+(result.newCount||0),"Uppdaterade: "+(result.updatedCount||0)];
+ if(result.createdRakelCount)parts.push("Nya Rakelnummer: "+result.createdRakelCount);
+ if(result.createdCategoryCount)parts.push("Nya fordonskategorier: "+result.createdCategoryCount);
+ msg.textContent=parts.join(" · ");
  data=await getJson("/register-data");updateCounts();render();
 }
 function updateCounts(){$("stationCount").textContent=data.stations.length+" poster";$("vehicleCount").textContent=data.vehicles.length+" poster";$("materialCount").textContent=data.material.length+" poster"}
