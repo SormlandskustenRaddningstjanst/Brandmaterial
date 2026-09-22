@@ -153,3 +153,25 @@ body.consumable-mode .consumable-qr{display:block!important}
 .consumable-print{margin-top:14px}
 .consumable-order-warning{margin-bottom:18px}
 @media(max-width:520px){.consumable-adjust-grid{grid-template-columns:repeat(3,1fr);gap:7px}.consumable-adjust{padding:15px 5px}.consumable-custom>div{grid-template-columns:1fr}.consumable-custom button{width:100%}.consumable-meta{grid-template-columns:1fr}.consumable-balance #consumableBalance{font-size:2.6rem}}
+
+
+/* Förbrukningsartiklar – Lageröversikt */
+.consumables-overview-card{margin-top:18px}
+.consumables-overview-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:8px}
+.consumables-overview-head h3{margin-bottom:3px}
+.consumable-station-group{border-top:1px solid var(--border);padding-top:14px;margin-top:14px}
+.consumable-station-group:first-child{border-top:0;margin-top:0;padding-top:4px}
+.consumable-station-group h4{margin:0 0 6px;color:var(--midnatt)}
+.consumable-overview-row{display:grid;grid-template-columns:minmax(190px,1fr) auto auto;gap:14px;align-items:center;padding:12px 0;border-top:1px solid var(--border)}
+.consumable-overview-row:first-of-type{border-top:0}
+.consumable-overview-row.is-green{display:none}
+.consumables-show-all .consumable-overview-row.is-green{display:grid}
+.consumable-overview-balance{font-weight:800;white-space:nowrap}
+.consumable-overview-action{width:auto;min-width:190px;padding:9px 12px;font-size:.82rem}
+.consumable-ok{font-weight:800;color:#238636;white-space:nowrap}
+.consumable-order-panel{margin-top:18px}
+.supplier-block{background:#f1f2f5;border-left:6px solid var(--midnatt);padding:14px;margin:12px 0 16px;line-height:1.55}
+.supplier-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}
+.supplier-grid .full{grid-column:1/-1}
+.consumable-order-actions{margin-top:16px}
+@media(max-width:760px){.consumables-overview-head{display:block}.consumables-overview-head button{margin-top:10px;width:100%}.consumable-overview-row{grid-template-columns:1fr auto}.consumable-overview-action{grid-column:1/-1;width:100%}.supplier-grid{grid-template-columns:1fr}.supplier-grid .full{grid-column:auto}}
