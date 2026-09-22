@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lagernivåer – Brandmaterial</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="lagernivaer.css?v=20260922-v1">
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <img class="logo" src="https://www.nykoping.se/globalassets/_system/logo-skrtj-ny.png" alt="Sörmlandskustens räddningstjänst">
+    <h1>Brandmaterial</h1>
+    <p>Lagernivåer</p>
+  </div>
+</header>
+<div class="header-rule"></div>
+<main>
+  <div class="toolbar">
+    <a class="back" href="./">← LAGERÖVERSIKT</a>
+    <a class="back" href="register.html">▦ REGISTER</a>
+  </div>
+
+  <section class="hero">
+    <h2>Lagernivåer</h2>
+    <p>Ställ in önskade lagernivåer för stationer och materialkrav för fordon.</p>
+  </section>
+
+  <div id="loading" class="card">Hämtar lagernivåer…</div>
+  <div id="error" class="message error"></div>
+
+  <section id="content" style="display:none">
+    <div class="type-switch">
+      <button id="stationsTab" class="type-button active" type="button">🏢 STATIONER</button>
+      <button id="vehiclesTab" class="type-button" type="button">🚒 FORDON</button>
+    </div>
+
+    <div class="selector-card card">
+      <label id="selectorLabel" for="targetSelect">Välj station</label>
+      <select id="targetSelect"></select>
+    </div>
+
+    <div id="planHead" class="plan-head">
+      <div>
+        <h3 id="planTitle">–</h3>
+        <p id="planHelp" class="muted"></p>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div id="planList" class="plan-list"></div>
+  </section>
+</main>
+<footer>Sörmlandskustens räddningstjänst · Brandmaterial</footer>
+<script src="lagernivaer.js?v=20260922-v1"></script>
+</body>
+</html>
