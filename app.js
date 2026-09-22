@@ -134,6 +134,12 @@ function renderConsumable() {
   el("consumableUnit").textContent = item.unit || "st";
   el("consumableReorderAt").textContent = item.reorderAt == null ? "–" : item.reorderAt + " " + (item.unit || "st");
   el("consumableTarget").textContent = item.target == null ? "–" : item.target + " " + (item.unit || "st");
+  const usage = el("consumableUsageArea");
+  if (usage) {
+    const text = String(item.usageArea || "").trim();
+    usage.style.display = text ? "block" : "none";
+    usage.innerHTML = text ? "<strong>Användningsområde</strong><br>" + escapeHtml(text).replace(/\n/g, "<br>") : "";
+  }
   const warning = el("consumableOrderWarning");
   if (item.orderNeeded) {
     warning.className = "message error active consumable-order-warning";
