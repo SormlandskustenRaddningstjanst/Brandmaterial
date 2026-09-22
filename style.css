@@ -128,3 +128,6 @@ button:disabled{opacity:.55;cursor:not-allowed}
   font:inherit;font-size:.76rem;font-weight:800;text-decoration:underline;
   cursor:pointer;color:#2a3768
 }
+
+.topbar-actions{display:flex;gap:8px;flex-wrap:wrap}
+.register-link{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
