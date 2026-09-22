@@ -179,3 +179,6 @@ body.consumable-mode .consumable-qr{display:block!important}
 
 /* Interna förbrukningsbeställningar */
 .consumable-order-panel label{display:block;margin:12px 0}.consumable-order-panel input{width:100%;max-width:360px;box-sizing:border-box;padding:10px;margin-top:5px}.consumable-orders-card{margin-top:16px}.consumable-internal-order{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:12px 0;border-bottom:1px solid #ddd}.consumable-internal-actions{display:flex;gap:8px;flex-wrap:wrap}.consumable-internal-actions button{min-width:100px}@media(max-width:700px){.consumable-internal-order{align-items:flex-start;flex-direction:column}.consumable-internal-actions{width:100%}.consumable-internal-actions button{flex:1}}
+
+/* Övningsbeställning */
+.exercise-lines-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0 8px}.exercise-line{display:grid;grid-template-columns:minmax(180px,1fr) 100px auto;gap:8px;align-items:center;margin:8px 0}.order-line{padding:2px 0}@media(max-width:650px){.exercise-line{grid-template-columns:1fr 90px}.exercise-line .exercise-remove{grid-column:1/-1}.exercise-lines-head{align-items:flex-start;flex-direction:column}}
