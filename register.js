@@ -64,11 +64,26 @@ function templateExcel(){
  if(currentView==="material")sample={"Material-ID":"SKRTJ-00001","Material":"Exempel","Kategori":"Verktyg","Station":"Nyköping","Rakelnummer":"","Registreringsnummer":"","Kommentar":"","Aktiv":"Ja","Transportstatus":"Ingen transport","Transport till station":""};
  const wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet([sample],{header:cfg.columns});XLSX.utils.book_append_sheet(wb,ws,cfg.title.slice(0,31));XLSX.writeFile(wb,cfg.title+"_importmall.xlsx");
 }
+function showImportOverlay(state,title,text){
+ const overlay=$("importOverlay"),modal=overlay.querySelector(".import-modal"),spinner=$("importSpinner"),close=$("importOverlayClose");
+ modal.classList.remove("success","error-state");
+ if(state==="success")modal.classList.add("success");
+ if(state==="error")modal.classList.add("error-state");
+ $("importOverlayTitle").textContent=title;
+ $("importOverlayText").textContent=text;
+ spinner.style.display=state==="loading"?"block":"none";
+ close.style.display=state==="loading"?"none":"inline-block";
+ overlay.classList.add("active");overlay.setAttribute("aria-hidden","false");
+}
+function hideImportOverlay(){
+ $("importOverlay").classList.remove("active");$("importOverlay").setAttribute("aria-hidden","true");
+}
 async function importFile(file){
  const cfg=views[currentView],buf=await file.arrayBuffer(),wb=XLSX.read(buf,{type:"array"}),ws=wb.Sheets[wb.SheetNames[0]],rows=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false}).map((r,i)=>({...r,__row:i+2}));
  if(!rows.length)throw new Error("Excel-filen innehåller inga rader.");
  const ok=confirm("Importera "+rows.length+" rader till "+cfg.title+"?\n\nBefintliga poster uppdateras och nya läggs till. Inga poster raderas.");
  if(!ok)return;
+ showImportOverlay("loading","Uppdatering pågår…",cfg.title+" uppdateras.\nStäng inte sidan.");
  const msg=$("importMessage");msg.className="message active";msg.textContent="Importerar…";
  const result=await postJson(cfg.endpoint,{rows});
  msg.className="message active ok";
@@ -77,12 +92,14 @@ async function importFile(file){
  if(result.createdCategoryCount)parts.push("Nya fordonskategorier: "+result.createdCategoryCount);
  msg.textContent=parts.join(" · ");
  data=await getJson("/register-data");updateCounts();render();
+ showImportOverlay("success","Import klar ✓",parts.slice(1).join(" · "));
 }
 function updateCounts(){$("stationCount").textContent=data.stations.length+" poster";$("vehicleCount").textContent=data.vehicles.length+" poster";$("materialCount").textContent=data.material.length+" poster"}
 document.querySelectorAll(".register-tile").forEach(b=>b.addEventListener("click",()=>openView(b.dataset.view)));
 $("closeList").onclick=()=>{$("listPanel").style.display="none";currentView=null};
 $("searchInput").addEventListener("input",render);$("exportBtn").onclick=exportExcel;$("templateBtn").onclick=templateExcel;
-$("importBtn").onclick=()=>$("fileInput").click();$("fileInput").addEventListener("change",async e=>{try{if(e.target.files[0])await importFile(e.target.files[0])}catch(err){const m=$("importMessage");m.className="message active error";m.textContent=err.message||err}finally{e.target.value=""}});
+$("importBtn").onclick=()=>$("fileInput").click();$("fileInput").addEventListener("change",async e=>{try{if(e.target.files[0])await importFile(e.target.files[0])}catch(err){const message=err.message||String(err);const m=$("importMessage");m.className="message active error";m.textContent=message;showImportOverlay("error","Importen misslyckades",message)}finally{e.target.value=""}});
+$("importOverlayClose").onclick=hideImportOverlay;
 $("newCategoryBtn").onclick=()=>{$("categoryPanel").style.display="block";$("categoryMessage").className="message";renderCategoryList();$("newCategoryName").focus()};
 $("cancelCategoryBtn").onclick=()=>{$("categoryPanel").style.display="none"};
 $("saveCategoryBtn").onclick=createCategory;
