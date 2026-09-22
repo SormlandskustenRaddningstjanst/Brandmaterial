@@ -1,6 +1,6 @@
 const API="https://ros-material-api.peter-hasselberg.workers.dev";
 const $=id=>document.getElementById(id);
-let data=null, consumableLevelsData={catalog:[],levels:[]}, mode="stations";
+let data=null, consumableLevelsData={catalog:[],levels:[]}, exerciseRulesData={materials:[],rules:[]}, mode="stations";
 const STATION_STORAGE_KEY="skrtj-selected-stations-v1";
 
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -30,12 +30,9 @@ function setMode(next){
   $("stationsTab").classList.toggle("active",mode==="stations");
   $("vehiclesTab").classList.toggle("active",mode==="vehicles");
   $("consumablesTab").classList.toggle("active",mode==="consumables");
-  const items=mode==="stations"
-    ? myStations().map(x=>({id:x.id,label:x.name||("Station "+x.id)}))
-    : mode==="vehicles"
-      ? myVehicles().map(x=>({id:x.id,label:[x.rakel,x.registration].filter(Boolean).join(" – ")||("Fordon "+x.id)}))
-      : (data.stations||[]).filter(x=>key(x.name)!=="nyköping").sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"sv")).map(x=>({id:x.id,label:x.name||("Station "+x.id)}));
-  $("selectorCard").style.display=mode==="stations"?"none":"grid";
+  $("exerciseTab").classList.toggle("active",mode==="exercise");
+  const items=mode==="stations" ? myStations().map(x=>({id:x.id,label:x.name||("Station "+x.id)})) : mode==="vehicles" ? myVehicles().map(x=>({id:x.id,label:[x.rakel,x.registration].filter(Boolean).join(" – ")||("Fordon "+x.id)})) : mode==="consumables" ? (data.stations||[]).filter(x=>key(x.name)!=="nyköping").sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"sv")).map(x=>({id:x.id,label:x.name||("Station "+x.id)})) : [{id:1,label:"Övningssortiment"}];
+  $("selectorCard").style.display=(mode==="stations"||mode==="exercise")?"none":"grid";
   $("selectorLabel").textContent=mode==="vehicles"?"Fordon på min station":"Station som Nyköping försörjer";
   $("targetSelect").innerHTML=items.map(x=>`<option value="${x.id}">${esc(x.label)}</option>`).join("");
   if(!items.length){
@@ -58,12 +55,11 @@ function render(){
     if(!vehicle){$("planList").innerHTML='<div class="empty">Fordonet tillhör inte din valda station.</div>';return;}
     $("planTitle").textContent=[vehicle.rakel,vehicle.registration].filter(Boolean).join(" – ")||("Fordon "+vehicle.id);
     renderVehicle(id);
-  }else{
+  }else if(mode==="consumables"){
     const station=(data.stations||[]).find(x=>Number(x.id)===id);
     if(!station){$("planList").innerHTML='<div class="empty">Välj en station.</div>';return;}
-    $("planTitle").textContent="Förbrukningsartiklar – "+station.name;
-    renderConsumables(id);
-  }
+    $("planTitle").textContent="Förbrukningsartiklar – "+station.name; renderConsumables(id);
+  }else{ $("planTitle").textContent="Övningssortiment"; renderExerciseRules(); }
 }
 function renderStation(stationId){
  $("planHelp").textContent="Välj vilka material som ska finnas och ange nivåerna.";
@@ -148,10 +144,17 @@ function renderConsumables(stationId){
 }
 $("stationsTab").addEventListener("click",()=>setMode("stations"));
 $("vehiclesTab").addEventListener("click",()=>setMode("vehicles"));
+
+function renderExerciseRules(){
+ $("planHelp").textContent="Nyköping bestämmer vilka material som får beställas till övning och max antal per beställning."; $("legend").textContent="Ej markerad = kan inte beställas till övning.";
+ const rules=exerciseRulesData.rules||[]; $("planList").innerHTML=(exerciseRulesData.materials||[]).map(material=>{const r=rules.find(x=>key(x.material)===key(material));return `<div class="plan-row" data-material="${esc(material)}"><div class="plan-name"><strong>${esc(material)}</strong><span>Övningsbeställning</span></div><label class="check-row"><input class="exercise-active" type="checkbox" ${r?.active?'checked':''}><span>Beställningsbar</span></label><label>Max antal<input class="exercise-max" type="number" min="1" step="1" value="${r?.maxQuantity||1}"></label><button class="save-exercise" type="button">SPARA</button></div>`}).join("")||'<div class="empty">Inga materialtyper hittades.</div>';
+ document.querySelectorAll(".save-exercise").forEach(btn=>btn.addEventListener("click",async()=>{const row=btn.closest(".plan-row"),active=row.querySelector(".exercise-active").checked,maxQuantity=Number(row.querySelector(".exercise-max").value);btn.disabled=true;try{await apiPost("/exercise-rule/upsert",{material:row.dataset.material,active,maxQuantity});exerciseRulesData=await apiGet("/exercise-rules");btn.textContent="SPARAT ✓";setTimeout(()=>renderExerciseRules(),500)}catch(e){alert(e.message);btn.disabled=false;}}));
+}
 $("consumablesTab").addEventListener("click",()=>setMode("consumables"));
+$("exerciseTab").addEventListener("click",()=>setMode("exercise"));
 $("targetSelect").addEventListener("change",render);
 (async()=>{try{
-  [data,consumableLevelsData]=await Promise.all([apiGet("/overview"),apiGet("/consumable-levels")]);
+  [data,consumableLevelsData,exerciseRulesData]=await Promise.all([apiGet("/overview"),apiGet("/consumable-levels"),apiGet("/exercise-rules")]);
   $("loading").style.display="none";
   $("content").style.display="block";
   setMode("stations");
