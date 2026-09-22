@@ -25,3 +25,10 @@ main{max-width:1180px;margin:auto;padding:20px}.toolbar{margin-bottom:14px}.back
 .import-modal.error-state{border-top-color:#b3261e}
 .import-modal.error-state .import-spinner{display:none}
 @keyframes importSpin{to{transform:rotate(360deg)}}
+
+.material-create-panel h4{margin:0 0 4px;color:#2a3768;font-size:1.15rem}
+.material-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.material-form-grid label{display:block;font-weight:800}
+.material-form-grid input,.material-form-grid select{display:block;width:100%;margin-top:5px;padding:10px;border:1px solid #bbc0ca;background:#fff;font:inherit}
+.material-form-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+@media(max-width:650px){.material-form-grid{grid-template-columns:1fr}}
