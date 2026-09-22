@@ -919,9 +919,7 @@ function renderHome() {
       : "";
     card.innerHTML =
       "<div><strong>" + escapeHtml(station.name) + "</strong><div class='muted small'>" +
-      stock.length + " material i stationslager</div>" + levelHtml + "</div>" +
-      "<button class='mini-button station-show-material' type='button'>MATERIALPLAN</button>";
-    card.querySelector(".station-show-material").addEventListener("click", () => openStationMaterialPlan(station));
+      stock.length + " material i stationslager</div>" + levelHtml + "</div>";
     const stationExpand = card.querySelector(".overview-expand");
     if (stationExpand) stationExpand.addEventListener("click", event => {
       event.stopPropagation();
@@ -954,9 +952,7 @@ function renderHome() {
     card.innerHTML =
       "<div><strong><i class='status-dot " + overallStatus + "'></i>" + escapeHtml(label || "Fordon") +
       "</strong><div class='muted small'>" + escapeHtml(type) + (type ? " • " : "") +
-      stock.length + " material</div>" + reqHtml + "</div>" +
-      "<button class='mini-button vehicle-show-material' type='button'>MATERIALPLAN</button>";
-    card.querySelector(".vehicle-show-material").addEventListener("click", () => openVehicleMaterialPlan(vehicle, label));
+      stock.length + " material</div>" + reqHtml + "</div>";
     const vehicleExpand = card.querySelector(".overview-expand");
     if (vehicleExpand) vehicleExpand.addEventListener("click", event => {
       event.stopPropagation();
