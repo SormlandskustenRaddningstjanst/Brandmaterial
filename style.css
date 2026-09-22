@@ -131,3 +131,25 @@ button:disabled{opacity:.55;cursor:not-allowed}
 
 .topbar-actions{display:flex;gap:8px;flex-wrap:wrap}
 .register-link{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+
+
+/* Förbrukningsartiklar – QR/hyllvy */
+.consumable-qr{display:none}
+body.consumable-mode .material-qr{display:none!important}
+body.consumable-mode .consumable-qr{display:block!important}
+.consumable-card{max-width:620px;margin:0 auto}
+.consumable-station{font-size:1.05rem;font-weight:700;color:var(--midnatt);margin-bottom:18px}
+.consumable-balance{background:#eef0f7;border-left:7px solid var(--midnatt);padding:20px;text-align:center;font-size:1.45rem;margin:14px 0 20px}
+.consumable-balance #consumableBalance{font-size:3rem;font-weight:700;line-height:1;color:var(--midnatt)}
+.consumable-adjust-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 18px}
+.consumable-adjust{font-size:1.2rem;padding:16px 8px}
+.consumable-adjust.negative{background:#8a3b3b}
+.consumable-adjust.positive{background:#2a3768}
+.consumable-custom{border-top:1px solid var(--border);padding-top:16px;margin-top:4px}
+.consumable-custom>div{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:7px}
+.consumable-custom input{min-width:0;padding:13px;border:1px solid #9da3ad;font:inherit;font-size:1rem}
+.consumable-custom button{width:auto}
+.consumable-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px;padding:13px;background:#f4f4f2;font-size:.9rem}
+.consumable-print{margin-top:14px}
+.consumable-order-warning{margin-bottom:18px}
+@media(max-width:520px){.consumable-adjust-grid{grid-template-columns:repeat(3,1fr);gap:7px}.consumable-adjust{padding:15px 5px}.consumable-custom>div{grid-template-columns:1fr}.consumable-custom button{width:100%}.consumable-meta{grid-template-columns:1fr}.consumable-balance #consumableBalance{font-size:2.6rem}}
