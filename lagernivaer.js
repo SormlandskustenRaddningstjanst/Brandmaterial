@@ -1,6 +1,6 @@
 const API="https://ros-material-api.peter-hasselberg.workers.dev";
 const $=id=>document.getElementById(id);
-let data=null, mode="stations";
+let data=null, consumableLevelsData={catalog:[],levels:[]}, mode="stations";
 const STATION_STORAGE_KEY="skrtj-selected-stations-v1";
 
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -29,11 +29,14 @@ function setMode(next){
   mode=next;
   $("stationsTab").classList.toggle("active",mode==="stations");
   $("vehiclesTab").classList.toggle("active",mode==="vehicles");
+  $("consumablesTab").classList.toggle("active",mode==="consumables");
   const items=mode==="stations"
     ? myStations().map(x=>({id:x.id,label:x.name||("Station "+x.id)}))
-    : myVehicles().map(x=>({id:x.id,label:[x.rakel,x.registration].filter(Boolean).join(" – ")||("Fordon "+x.id)}));
+    : mode==="vehicles"
+      ? myVehicles().map(x=>({id:x.id,label:[x.rakel,x.registration].filter(Boolean).join(" – ")||("Fordon "+x.id)}))
+      : (data.stations||[]).filter(x=>key(x.name)!=="nyköping").sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"sv")).map(x=>({id:x.id,label:x.name||("Station "+x.id)}));
   $("selectorCard").style.display=mode==="stations"?"none":"grid";
-  $("selectorLabel").textContent="Fordon på min station";
+  $("selectorLabel").textContent=mode==="vehicles"?"Fordon på min station":"Station som Nyköping försörjer";
   $("targetSelect").innerHTML=items.map(x=>`<option value="${x.id}">${esc(x.label)}</option>`).join("");
   if(!items.length){
     $("planTitle").textContent="Inget att visa";
@@ -50,11 +53,16 @@ function render(){
     if(!station){$("planList").innerHTML='<div class="empty">Välj Min station på Lageröversikten först.</div>';return;}
     $("planTitle").textContent=station.name||("Station "+station.id);
     renderStation(Number(station.id));
-  }else{
+  }else if(mode==="vehicles"){
     const vehicle=myVehicles().find(x=>Number(x.id)===id);
     if(!vehicle){$("planList").innerHTML='<div class="empty">Fordonet tillhör inte din valda station.</div>';return;}
     $("planTitle").textContent=[vehicle.rakel,vehicle.registration].filter(Boolean).join(" – ")||("Fordon "+vehicle.id);
     renderVehicle(id);
+  }else{
+    const station=(data.stations||[]).find(x=>Number(x.id)===id);
+    if(!station){$("planList").innerHTML='<div class="empty">Välj en station.</div>';return;}
+    $("planTitle").textContent="Förbrukningsartiklar – "+station.name;
+    renderConsumables(id);
   }
 }
 function renderStation(stationId){
@@ -116,11 +124,34 @@ function renderVehicle(vehicleId){
     });
   });
 }
+function renderConsumables(stationId){
+  $("planHelp").textContent="Nyköping bestämmer vilka beställningsbara artiklar stationen ska ha och högsta/önskat antal.";
+  $("legend").textContent="Beställningen kan aldrig fylla stationen över detta antal.";
+  const catalog=consumableLevelsData.catalog||[], levels=consumableLevelsData.levels||[];
+  $("planList").innerHTML=catalog.map(a=>{
+    const level=levels.find(x=>Number(x.stationId)===stationId&&key(x.articleId)===key(a.articleId));
+    const active=!!level, target=active?Number(level.target||0):0;
+    return `<div class="plan-row vehicle" data-article-id="${esc(a.articleId)}">
+      <div class="plan-name"><strong>${esc(a.article)}</strong><span>${esc(a.articleId)} · ${esc(a.category||"")} · ${esc(a.unit||"st")}</span></div>
+      <label class="check"><input class="stocked" type="checkbox" ${active?"checked":""}> Ska finnas</label>
+      <label>🟢 Önskat / max antal<input class="required" type="number" min="1" step="1" value="${target||1}"></label>
+      <button class="plan-save" type="button">SPARA</button></div>`;
+  }).join("")||'<div class="empty">Nyköping har inga artiklar markerade Beställningsbar = JA.</div>';
+  document.querySelectorAll(".plan-row").forEach(row=>{
+    const stocked=row.querySelector(".stocked"), input=row.querySelector(".required"), btn=row.querySelector(".plan-save");
+    const sync=()=>input.disabled=!stocked.checked; stocked.addEventListener("change",sync); sync();
+    btn.addEventListener("click",async()=>{btn.disabled=true;btn.textContent="SPARAR…";try{
+      await apiPost("/consumable-level/upsert",{stationId,articleId:row.dataset.articleId,active:stocked.checked,target:Number(input.value)});
+      consumableLevelsData=await apiGet("/consumable-levels");btn.classList.add("saved");btn.textContent="SPARAT ✓";setTimeout(()=>render(),500);
+    }catch(e){alert(e.message||e);btn.disabled=false;btn.textContent="SPARA";}});
+  });
+}
 $("stationsTab").addEventListener("click",()=>setMode("stations"));
 $("vehiclesTab").addEventListener("click",()=>setMode("vehicles"));
+$("consumablesTab").addEventListener("click",()=>setMode("consumables"));
 $("targetSelect").addEventListener("change",render);
 (async()=>{try{
-  data=await apiGet("/overview");
+  [data,consumableLevelsData]=await Promise.all([apiGet("/overview"),apiGet("/consumable-levels")]);
   $("loading").style.display="none";
   $("content").style.display="block";
   setMode("stations");
