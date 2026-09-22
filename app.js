@@ -996,32 +996,44 @@ function isNykopingName(name) {
   return String(name || "").trim().toLocaleLowerCase("sv-SE") === "nyköping";
 }
 
+function consumableCatalogForStation(station){
+  const nykCatalog=(consumablesData||[]).filter(x=>x.active!==false&&isNykopingName(x.station)&&x.orderable===true);
+  return nykCatalog.map(source=>{
+    const own=(consumablesData||[]).find(x=>x.active!==false&&Number(x.stationId)===Number(station.id)&&String(x.article||"").trim().toLocaleLowerCase("sv-SE")===String(source.article||"").trim().toLocaleLowerCase("sv-SE"));
+    const target=own&&Number(own.target)>0?Number(own.target):Number(source.target||0);
+    return {...source,sourceArticleId:source.articleId,stationId:Number(station.id),station:station.name,balance:own?Number(own.balance||0):0,target,ownArticleId:own?.articleId||"",unit:own?.unit||source.unit||"st"};
+  });
+}
+
 function renderConsumablesOverview(selectedIds) {
   const box=el("consumablesOverview"); if(!box)return;
-  const selected=(consumablesData||[]).filter(item=>selectedIds.includes(Number(item.stationId))&&item.active!==false);
-  const alerts=selected.filter(item=>isNykopingName(item.station)?item.orderNeeded:(item.orderable&&Number(item.balance)<Number(item.target)));
-  el("countConsumableAlerts").textContent=alerts.length;
-  const toggle=el("toggleConsumablesBtn"); toggle.textContent=showAllConsumables?"DÖLJ GRÖNA":"VISA ALLA";
-  box.classList.toggle("consumables-show-all",showAllConsumables); box.innerHTML="";
   const stations=(overviewData?.stations||[]).filter(st=>selectedIds.includes(Number(st.id)));
+  let alertCount=0; box.innerHTML="";
   for(const station of stations){
-    const items=selected.filter(item=>Number(item.stationId)===Number(station.id)).sort((x,y)=>String(x.article).localeCompare(String(y.article),"sv"));
+    const nyk=isNykopingName(station.name);
+    const items=nyk
+      ? (consumablesData||[]).filter(x=>x.active!==false&&Number(x.stationId)===Number(station.id)).sort((x,y)=>String(x.article).localeCompare(String(y.article),"sv"))
+      : consumableCatalogForStation(station).sort((x,y)=>String(x.article).localeCompare(String(y.article),"sv"));
     if(!items.length)continue;
     const group=document.createElement("div");group.className="consumable-station-group";group.innerHTML="<h4>"+escapeHtml(station.name)+"</h4>";
     for(const item of items){
-      const nyk=isNykopingName(station.name), room=Math.max(0,Number(item.target||0)-Number(item.balance||0));
-      const canOrder=nyk?item.orderNeeded:(item.orderable&&room>0);
+      const room=Math.max(0,Number(item.target||0)-Number(item.balance||0));
+      const canOrder=nyk?item.orderNeeded:(item.orderable===true&&room>0&&Number(item.balance||0)<Number(item.target||0));
+      if(canOrder)alertCount++;
       const row=document.createElement("div");row.className="consumable-overview-row"+(canOrder?" is-alert":" is-green");
       const unit=item.unit||"st";
-      let sub=escapeHtml(item.articleId)+" · Saldo "+escapeHtml(item.balance)+" / "+escapeHtml(item.target??"–")+" "+escapeHtml(unit);
-      if(!nyk&&!item.orderable)sub+=" · Ej beställningsbar";
+      let sub=escapeHtml(item.ownArticleId||item.articleId)+" · Saldo "+escapeHtml(item.balance)+" / "+escapeHtml(item.target??"–")+" "+escapeHtml(unit);
+      if(!nyk&&!item.ownArticleId)sub+=" · Ännu inte i stationens lager";
       row.innerHTML="<div><strong>"+escapeHtml(item.article)+"</strong><div class='muted small'>"+sub+"</div></div>"+
         "<div class='consumable-overview-balance'>"+escapeHtml(item.balance)+" "+escapeHtml(unit)+"</div>"+
         (canOrder?"<button class='consumable-overview-action' type='button'>"+(nyk?"BESTÄLL FRÅN LEVERANTÖR":"BESTÄLL FRÅN NYKÖPING")+"</button>":"<div class='consumable-ok'>✓ OK</div>");
       row.querySelector("button")?.addEventListener("click",()=>openConsumableOrder(item,station));group.appendChild(row);
     } box.appendChild(group);
   }
-  if(!box.children.length)box.innerHTML='<div class="muted empty">Inga förbrukningsartiklar registrerade för valda stationer.</div>';
+  el("countConsumableAlerts").textContent=alertCount;
+  const toggle=el("toggleConsumablesBtn"); toggle.textContent=showAllConsumables?"DÖLJ GRÖNA":"VISA ALLA";
+  box.classList.toggle("consumables-show-all",showAllConsumables);
+  if(!box.children.length)box.innerHTML='<div class="muted empty">Inga beställningsbara förbrukningsartiklar finns för valda stationer.</div>';
 }
 
 function openConsumableOrder(item,station){
@@ -1030,11 +1042,11 @@ function openConsumableOrder(item,station){
   el("consumableOrderSubtitle").textContent=nyk?"Extern beställning från leverantör":"Beställning från Nyköpings centrallager";
   const room=Math.max(0,Number(item.target||0)-Number(item.balance||0));
   el("consumableOrderDetails").innerHTML=nyk?"<p><strong>Saldo:</strong> "+escapeHtml(item.balance)+" "+escapeHtml(unit)+"<br><strong>Önskat lager:</strong> "+escapeHtml(item.target??"–")+" "+escapeHtml(unit)+"<br><strong>Föreslaget antal:</strong> "+escapeHtml(Math.max(1,Number(item.orderQuantity)||1))+" "+escapeHtml(unit)+"</p>":
-    "<p><strong>Nuvarande saldo:</strong> "+escapeHtml(item.balance)+" / "+escapeHtml(item.target)+" "+escapeHtml(unit)+"<br><strong>Kan beställas upp till önskat lager:</strong> "+escapeHtml(room)+" "+escapeHtml(unit)+"</p>"+
+    "<p><strong>Artikel:</strong> "+escapeHtml(item.article)+"<br><strong>Station:</strong> "+escapeHtml(station.name)+"<br><strong>Nuvarande saldo:</strong> "+escapeHtml(item.balance)+" / "+escapeHtml(item.target)+" "+escapeHtml(unit)+"<br><strong>Max att beställa nu:</strong> "+escapeHtml(room)+" "+escapeHtml(unit)+"</p>"+
     "<label>Antal<input id='consumableInternalQty' type='number' min='1' max='"+escapeHtml(room)+"' step='1' value='1'></label>"+
     "<label>Beställare<input id='consumableOrderedBy' type='text' maxlength='100' placeholder='För- och efternamn' value='"+escapeHtml(localStorage.getItem("skrtj-consumable-ordered-by")||"")+"'></label>";
   const supplier=el("consumableSupplierBlock"),link=el("consumableSupplierLink");
-  if(nyk){supplier.style.display="block";supplier.innerHTML="<strong>Leverantör</strong><div class='supplier-grid'><div><strong>Leverantör:</strong> "+escapeHtml(item.supplier||"–")+"</div><div><strong>Kontaktperson:</strong> "+escapeHtml(item.contactPerson||"–")+"</div><div><strong>Telefon:</strong> "+escapeHtml(item.phone||"–")+"</div><div><strong>E-post:</strong> "+escapeHtml(item.email||"–")+"</div><div><strong>Kundnummer:</strong> "+escapeHtml(item.customerNumber||"–")+"</div><div><strong>Avtalsnummer:</strong> "+escapeHtml(item.agreementNumber||"–")+"</div><div><strong>Artikelnummer:</strong> "+escapeHtml(item.supplierArticleNumber||"–")+"</div></div>";if(item.orderUrl){link.href=item.orderUrl;link.style.display="inline-block"}else link.style.display="none";el("submitConsumableOrderBtn").textContent="REGISTRERA BESTÄLLNING"}else{supplier.style.display="none";supplier.innerHTML="";link.style.display="none";el("submitConsumableOrderBtn").textContent="BESTÄLL FRÅN NYKÖPING"}
+  if(nyk){supplier.style.display="block";supplier.innerHTML="<strong>Leverantör</strong><div class='supplier-grid'><div><strong>Leverantör:</strong> "+escapeHtml(item.supplier||"–")+"</div><div><strong>Kontaktperson:</strong> "+escapeHtml(item.contactPerson||"–")+"</div><div><strong>Telefon:</strong> "+escapeHtml(item.phone||"–")+"</div><div><strong>E-post:</strong> "+escapeHtml(item.email||"–")+"</div><div><strong>Kundnummer:</strong> "+escapeHtml(item.customerNumber||"–")+"</div><div><strong>Avtalsnummer:</strong> "+escapeHtml(item.agreementNumber||"–")+"</div><div><strong>Artikelnummer:</strong> "+escapeHtml(item.supplierArticleNumber||"–")+"</div></div>";if(item.orderUrl){link.href=item.orderUrl;link.style.display="inline-block"}else link.style.display="none";el("submitConsumableOrderBtn").textContent="REGISTRERA BESTÄLLNING"}else{supplier.style.display="none";supplier.innerHTML="";link.style.display="none";el("submitConsumableOrderBtn").textContent="SKICKA BESTÄLLNING"}
   el("consumableOrderMessage").className="message";el("consumableOrderMessage").textContent="";el("consumableOrderPanel").style.display="block";el("consumableOrderPanel").scrollIntoView({behavior:"smooth",block:"start"});
 }
 
@@ -1059,7 +1071,7 @@ el("submitConsumableOrderBtn")?.addEventListener("click",async()=>{
   if(!pendingConsumableOrder)return;const {item,station}=pendingConsumableOrder,nyk=isNykopingName(station.name),btn=el("submitConsumableOrderBtn"),msg=el("consumableOrderMessage");btn.disabled=true;msg.className="message info active";msg.textContent="Sparar beställningen…";
   try{
     if(nyk){const qty=Math.max(1,Number(item.orderQuantity)||1),result=await apiPost("/orders",{type:"Lager",material:(item.articleId+" – "+item.article),quantity:qty,stationId:Number(station.id),comment:"Förbrukningsartikel – leverantör"+(item.orderComment?" · "+item.orderComment:"")});msg.className="message info active";msg.innerHTML="<strong>✓ Leverantörsbeställningen är registrerad.</strong><br>"+escapeHtml(result.orderId||"");await loadOrders()}
-    else {const qty=Number(el("consumableInternalQty")?.value),orderedBy=String(el("consumableOrderedBy")?.value||"").trim();if(!Number.isInteger(qty)||qty<1)throw new Error("Ange ett giltigt antal.");if(!orderedBy)throw new Error("Ange vem som beställer.");localStorage.setItem("skrtj-consumable-ordered-by",orderedBy);const result=await apiPost("/consumable-order",{articleId:item.articleId,quantity:qty,orderedBy});msg.className="message info active";msg.innerHTML="<strong>✓ "+escapeHtml(result.orderId)+" är skickad till Nyköping.</strong><br>Nyköpings lagersaldo har minskats med "+escapeHtml(qty)+".";await reloadConsumableData()}
+    else {const qty=Number(el("consumableInternalQty")?.value),orderedBy=String(el("consumableOrderedBy")?.value||"").trim();if(!Number.isInteger(qty)||qty<1)throw new Error("Ange ett giltigt antal.");if(!orderedBy)throw new Error("Ange vem som beställer.");localStorage.setItem("skrtj-consumable-ordered-by",orderedBy);const result=await apiPost("/consumable-order",{articleId:item.sourceArticleId||item.articleId,stationId:Number(station.id),quantity:qty,orderedBy});msg.className="message info active";msg.innerHTML="<strong>✓ "+escapeHtml(result.orderId)+" är skickad till Nyköping.</strong><br>Nyköpings lagersaldo har minskats med "+escapeHtml(qty)+".";await reloadConsumableData()}
   }catch(err){msg.className="message error active";msg.textContent=err.message||String(err)}finally{btn.disabled=false}
 });
 
