@@ -9,13 +9,13 @@ const views={
  stations:{title:"Stationer",help:"Stationsnummer och stationsnamn.",columns:["Stationsnummer","Station","Aktiv"],headers:["Stationsnummer","Station","Aktiv"],endpoint:"/stations/import"},
  vehicles:{title:"Fordon",help:"Rakelnummer hör till fordonet. Fordonskategori hanteras här i registret.",columns:["Rakelnummer","Registreringsnummer","Fordonskategori","Station","Aktiv"],headers:["Rakelnummer","Registreringsnummer","Fordonskategori","Station","Aktiv"],endpoint:"/vehicles/import"},
  material:{title:"Brandmaterial",help:"Hela listan med individuella Material-ID.",columns:["Material-ID","Material","Kategori","Station","Rakelnummer","Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"],headers:["Material-ID","Material","Kategori","Station","Rakelnummer","Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"],endpoint:"/material/import"},
- consumables:{title:"Förbrukningsartiklar",help:"Saldo, beställningsnivå och leverantör per station. Artikel-ID används i hyllans QR-kod.",columns:["Artikel-ID","Artikel","Kategori","Användningsområde","Station","Saldo","Enhet","Beställ vid","Önskat lager","Förpackningsstorlek","Minsta beställningsantal","Leverantör","Kontaktperson","Telefon","E-post","Kundnummer","Avtalsnummer","Artikelnummer","Beställningslänk","Beställningskommentar","Kommentar","Aktiv"],headers:["Artikel-ID","Artikel","Kategori","Användningsområde","Station","Saldo","Enhet","Beställ vid","Önskat lager","Förpackningsstorlek","Minsta beställningsantal","Leverantör","Kontaktperson","Telefon","E-post","Kundnummer","Avtalsnummer","Artikelnummer","Beställningslänk","Beställningskommentar","Kommentar","Aktiv"],endpoint:null}
+ consumables:{title:"Förbrukningsartiklar",help:"Saldo, beställningsnivå och leverantör per station. Artikel-ID används i hyllans QR-kod.",columns:["Artikel-ID","Artikel","Kategori","Användningsområde","Station","Saldo","Enhet","Beställ vid","Önskat lager","Beställningsbar","Förpackningsstorlek","Minsta beställningsantal","Leverantör","Kontaktperson","Telefon","E-post","Kundnummer","Avtalsnummer","Artikelnummer","Beställningslänk","Beställningskommentar","Kommentar","Aktiv"],headers:["Artikel-ID","Artikel","Kategori","Användningsområde","Station","Saldo","Enhet","Beställ vid","Önskat lager","Beställningsbar","Förpackningsstorlek","Minsta beställningsantal","Leverantör","Kontaktperson","Telefon","E-post","Kundnummer","Avtalsnummer","Artikelnummer","Beställningslänk","Beställningskommentar","Kommentar","Aktiv"],endpoint:null}
 };
 function rowsFor(view){
  if(view==="stations")return data.stations.map(x=>({"Stationsnummer":x.stationNumber,"Station":x.name,"Aktiv":boolText(x.active)}));
  if(view==="vehicles")return data.vehicles.map(x=>({"Rakelnummer":x.rakel,"Registreringsnummer":x.registration,"Fordonskategori":x.type,"Station":x.station,"Aktiv":boolText(x.active),"__id":x.id,"__categoryId":x.categoryId}));
  if(view==="material")return data.material.map(x=>({"Material-ID":x.materialId,"Material":x.material,"Kategori":x.category,"Station":x.station,"Rakelnummer":x.rakel,"Registreringsnummer":x.registration,"Kommentar":x.comment,"Aktiv":boolText(x.active),"Transportstatus":x.transportStatus,"Transport till station":x.transportDestination}));
- return (data.consumables||[]).map(x=>({"Artikel-ID":x.articleId,"Artikel":x.article,"Kategori":x.category,"Station":x.station,"Saldo":x.balance,"Beställ vid":x.reorderAt??"","Önskat lager":x.target??"","Enhet":x.unit,"Leverantör":x.supplier,"Artikelnummer":x.supplierArticleNumber,"Kontaktperson":x.contactPerson,"Telefon":x.phone,"E-post":x.email,"Kundnummer":x.customerNumber,"Avtalsnummer":x.agreementNumber,"Förpackningsstorlek":x.packageSize??"","Minsta beställningsantal":x.minimumOrderQuantity??"","Beställningslänk":x.orderUrl,"Beställningskommentar":x.orderComment,"Användningsområde":x.usageArea,"Kommentar":x.comment,"Aktiv":boolText(x.active)}));
+ return (data.consumables||[]).map(x=>({"Artikel-ID":x.articleId,"Artikel":x.article,"Kategori":x.category,"Station":x.station,"Saldo":x.balance,"Beställ vid":x.reorderAt??"","Önskat lager":x.target??"","Beställningsbar":boolText(x.orderable),"Enhet":x.unit,"Leverantör":x.supplier,"Artikelnummer":x.supplierArticleNumber,"Kontaktperson":x.contactPerson,"Telefon":x.phone,"E-post":x.email,"Kundnummer":x.customerNumber,"Avtalsnummer":x.agreementNumber,"Förpackningsstorlek":x.packageSize??"","Minsta beställningsantal":x.minimumOrderQuantity??"","Beställningslänk":x.orderUrl,"Beställningskommentar":x.orderComment,"Användningsområde":x.usageArea,"Kommentar":x.comment,"Aktiv":boolText(x.active)}));
 }
 function render(){
  const cfg=views[currentView],q=$("searchInput").value.trim().toLocaleLowerCase("sv-SE");
@@ -27,6 +27,7 @@ function render(){
    if(currentView==="material"&&c==="Material-ID"&&r[c])v="<a class='material-link' href='./?material="+encodeURIComponent(r[c])+"'>"+v+"</a>";
    if(currentView==="consumables"&&c==="Artikel-ID"&&r[c])v="<a class='material-link' href='./?forbrukning="+encodeURIComponent(r[c])+"'>"+v+"</a>";
    if(currentView==="consumables"&&c==="Beställningslänk"&&/^https?:\/\//i.test(String(r[c]||"")))v="<a class='material-link' href='"+esc(r[c])+"' target='_blank' rel='noopener'>Öppna</a>";
+   if(currentView==="consumables"&&c==="Beställningsbar"&&r["Station"]!=="Nyköping")v="<button type='button' class='mini-button consumable-orderable-toggle' data-article-id='"+esc(r["Artikel-ID"])+"' data-orderable='"+(r[c]==="Ja"?"true":"false")+"'>"+(r[c]==="Ja"?"JA":"NEJ")+"</button>";
    if(currentView==="vehicles"&&c==="Fordonskategori"){
      const options=(data.vehicleCategories||[]).map(x=>"<option value='"+x.id+"' "+(Number(x.id)===Number(r.__categoryId)?"selected":"")+">"+esc(x.name)+"</option>").join("");
      v="<select class='vehicle-category-select' data-vehicle-id='"+r.__id+"'><option value=''>— Välj kategori —</option>"+options+"</select>";
@@ -34,6 +35,13 @@ function render(){
    return "<td>"+v+"</td>";
  }).join("")+"</tr>").join("") || "<tr><td colspan='"+cfg.columns.length+"'>Inga poster hittades.</td></tr>";
 }
+document.addEventListener("click",async e=>{
+ const b=e.target.closest(".consumable-orderable-toggle"); if(!b)return;
+ b.disabled=true;
+ try{await postJson("/consumable/orderable",{articleId:b.dataset.articleId,orderable:b.dataset.orderable!=="true"});await refreshConsumables()}
+ catch(err){alert("Kunde inte ändra Beställningsbar: "+(err.message||err))}
+ finally{b.disabled=false}
+});
 function openView(view){currentView=view;$("listPanel").style.display="block";$("searchInput").value="";$("importMessage").className="message";$("newCategoryBtn").style.display=view==="vehicles"?"inline-block":"none";$("newMaterialBtn").style.display=view==="material"?"inline-block":"none";$("newConsumableBtn").style.display=view==="consumables"?"inline-block":"none";$("importBtn").style.display=view==="consumables"?"none":"inline-block";$("templateBtn").style.display=view==="consumables"?"none":"inline-block";$("categoryPanel").style.display="none";$("newMaterialPanel").style.display="none";$("newConsumablePanel").style.display="none";render();$("listPanel").scrollIntoView({behavior:"smooth",block:"start"})}
 function renderCategoryList(){
  const list=(data.vehicleCategories||[]);
