@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="register.css?v=20260922-new-material-v1">
+  <link rel="stylesheet" href="register.css?v=20260922-consumables-v1">
 </head>
 <body>
 <header>
@@ -20,7 +20,7 @@
 <div class="header-rule"></div>
 <main>
   <div class="toolbar"><a class="back" href="./">← LAGERÖVERSIKT</a></div>
-  <section class="hero"><h2>Register</h2><p>Grunduppgifter för stationer, fordon och brandmaterial.</p></section>
+  <section class="hero"><h2>Register</h2><p>Grunduppgifter för stationer, fordon, brandmaterial och förbrukningsartiklar.</p></section>
 
   <div id="registerLoading" class="card">Hämtar register…</div>
   <div id="registerError" class="message error"></div>
@@ -30,6 +30,7 @@
       <button class="register-tile" data-view="stations"><span class="icon">🏢</span><strong>Stationer</strong><small id="stationCount">0 poster</small></button>
       <button class="register-tile" data-view="vehicles"><span class="icon">🚒</span><strong>Fordon</strong><small id="vehicleCount">0 poster</small></button>
       <button class="register-tile" data-view="material"><span class="icon">🧰</span><strong>Brandmaterial</strong><small id="materialCount">0 poster</small></button>
+      <button class="register-tile" data-view="consumables"><span class="icon">📦</span><strong>Förbrukningsartiklar</strong><small id="consumableCount">0 poster</small></button>
     </div>
 
     <section id="listPanel" class="card list-panel" style="display:none">
@@ -43,6 +44,7 @@
         <button id="templateBtn" class="secondary">📄 LADDA NER MALL</button>
         <button id="newCategoryBtn" class="yellow" style="display:none">+ NY KATEGORI</button>
         <button id="newMaterialBtn" class="yellow" style="display:none">+ NYTT BRANDMATERIAL</button>
+        <button id="newConsumableBtn" class="yellow" style="display:none">+ NY FÖRBRUKNINGSARTIKEL</button>
         <input id="fileInput" type="file" accept=".xlsx" hidden>
       </div>
       <div id="importMessage" class="message"></div>
@@ -61,6 +63,30 @@
           <button id="cancelMaterialBtn" class="secondary">AVBRYT</button>
         </div>
         <div id="newMaterialMessage" class="message"></div>
+      </div>
+
+      <div id="newConsumablePanel" class="category-panel material-create-panel" style="display:none">
+        <h4>Ny förbrukningsartikel</h4>
+        <p class="muted">Artikel-ID skapas automatiskt, exempelvis FORB-001. Varje station får en egen artikelrad och egen hyll-QR.</p>
+        <div class="material-form-grid">
+          <label>Artikel<input id="newConsumableName" type="text" maxlength="150" placeholder="Exempel: Absol"></label>
+          <label>Kategori<input id="newConsumableCategory" type="text" maxlength="100" list="consumableCategorySuggestions" placeholder="Exempel: Absorptionsmedel"></label>
+          <datalist id="consumableCategorySuggestions"></datalist>
+          <label>Station<select id="newConsumableStation"></select></label>
+          <label>Enhet<input id="newConsumableUnit" type="text" maxlength="30" value="st" placeholder="st, säck, flaska…"></label>
+          <label>Startsaldo<input id="newConsumableBalance" type="number" min="0" step="1" value="0"></label>
+          <label>Beställ vid<input id="newConsumableReorder" type="number" min="0" step="1" value="0"></label>
+          <label>Önskat lager<input id="newConsumableTarget" type="number" min="0" step="1" value="0"></label>
+          <label>Leverantör<input id="newConsumableSupplier" type="text" maxlength="150" placeholder="Exempel: Ahlsell"></label>
+          <label>Artikelnummer<input id="newConsumableSupplierNo" type="text" maxlength="100" placeholder="Leverantörens artikelnummer"></label>
+          <label class="full-width">Beställningslänk<input id="newConsumableOrderUrl" type="url" maxlength="500" placeholder="https://..."></label>
+          <label class="full-width">Kommentar<input id="newConsumableComment" type="text" maxlength="250" placeholder="Valfri kommentar"></label>
+        </div>
+        <div class="material-form-actions">
+          <button id="saveConsumableBtn">SKAPA OCH VISA QR</button>
+          <button id="cancelConsumableBtn" class="secondary">AVBRYT</button>
+        </div>
+        <div id="newConsumableMessage" class="message"></div>
       </div>
       <div id="categoryPanel" class="category-panel" style="display:none">
         <label for="newCategoryName">Ny fordonskategori</label>
@@ -89,6 +115,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="register.js?v=20260922-new-material-v1"></script>
+<script src="register.js?v=20260922-consumables-v1"></script>
 </body>
 </html>
