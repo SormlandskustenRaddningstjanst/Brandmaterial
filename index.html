@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260922-forbrukning-qr-v1">
+<link rel="stylesheet" href="style.css?v=20260922-forbrukning-lager-v2">
 </head>
 <body>
 <header>
@@ -93,6 +93,20 @@
         <div class="card"><h3>🏢 Stationslager</h3><div id="stationOverview"></div></div>
         <div class="card"><h3>🚒 Fordon</h3><div id="vehicleOverview"></div></div>
       </div>
+      <div class="card consumables-overview-card">
+        <div class="consumables-overview-head">
+          <div><h3>📦 Förbrukningsartiklar <span id="countConsumableAlerts" class="transport-count">0</span></h3><div class="muted small">Beställningsbehov för dina valda stationer.</div></div>
+          <button id="toggleConsumablesBtn" class="mini-button secondary" type="button">VISA ALLA</button>
+        </div>
+        <div id="consumablesOverview"></div>
+      </div>
+      <div id="consumableOrderPanel" class="card consumable-order-panel" style="display:none">
+        <div class="topbar"><div><h3 id="consumableOrderTitle">Förbrukningsartikel</h3><div id="consumableOrderSubtitle" class="muted"></div></div><button id="closeConsumableOrderBtn" class="mini-button secondary" type="button">STÄNG</button></div>
+        <div id="consumableSupplierBlock" class="supplier-block" style="display:none"></div>
+        <div id="consumableOrderDetails"></div>
+        <div class="actions consumable-order-actions"><button id="submitConsumableOrderBtn" type="button">SKICKA BESTÄLLNING</button><a id="consumableSupplierLink" class="button" target="_blank" rel="noopener" style="display:none">ÖPPNA BESTÄLLNINGSLÄNK</a></div>
+        <div id="consumableOrderMessage" class="message"></div>
+      </div>
       <div class="order-actions">
         <button id="orderStockBtn" type="button">📦 BESTÄLLNING LAGER</button>
         <button id="orderExerciseBtn" type="button">🎯 BESTÄLLNING ÖVNING</button>
@@ -121,6 +135,6 @@
   </section>
   <div class="footer">Sörmlandskustens räddningstjänst · Brandmaterial</div>
 </main>
-<script src="app.js?v=20260922-forbrukning-qr-v1"></script>
+<script src="app.js?v=20260922-forbrukning-lager-v2"></script>
 </body>
 </html>
