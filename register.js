@@ -24,15 +24,15 @@ function render(){
    let v=esc(r[c]);
    if(currentView==="material"&&c==="Material-ID"&&r[c])v="<a class='material-link' href='./?material="+encodeURIComponent(r[c])+"'>"+v+"</a>";
    if(currentView==="vehicles"&&c==="Fordonskategori"){
-     const options=(data.vehicleCategories||[]).map(x=>"<option value='"+x.id+"' "+(Number(x.id)===Number(r.__categoryId)?"selected":"")+">"+esc(x.name)+"</option>").join("");
+     const options=(data.vehicleCategories||[]).filter(x=>x.active).map(x=>"<option value='"+x.id+"' "+(Number(x.id)===Number(r.__categoryId)?"selected":"")+">"+esc(x.name)+"</option>").join("");
      v="<select class='vehicle-category-select' data-vehicle-id='"+r.__id+"'><option value=''>— Välj kategori —</option>"+options+"</select>";
    }
    return "<td>"+v+"</td>";
  }).join("")+"</tr>").join("") || "<tr><td colspan='"+cfg.columns.length+"'>Inga poster hittades.</td></tr>";
 }
-function openView(view){currentView=view;$("listPanel").style.display="block";$("searchInput").value="";$("importMessage").className="message";$("newCategoryBtn").style.display=view==="vehicles"?"inline-block":"none";$("categoryPanel").style.display="none";render();$("listPanel").scrollIntoView({behavior:"smooth",block:"start"})}
+function openView(view){currentView=view;$("listPanel").style.display="block";$("searchInput").value="";$("importMessage").className="message";$("newCategoryBtn").style.display=view==="vehicles"?"inline-block":"none";$("newMaterialBtn").style.display=view==="material"?"inline-block":"none";$("categoryPanel").style.display="none";$("newMaterialPanel").style.display="none";render();$("listPanel").scrollIntoView({behavior:"smooth",block:"start"})}
 function renderCategoryList(){
- const list=(data.vehicleCategories||[]);
+ const list=(data.vehicleCategories||[]).filter(x=>x.active);
  $("categoryList").innerHTML=list.length?"<strong>Befintliga kategorier:</strong> "+list.map(x=>"<span>"+esc(x.name)+"</span>").join(""):"Inga kategorier skapade ännu.";
 }
 async function createCategory(){
@@ -52,6 +52,33 @@ async function setVehicleCategory(vehicleId,categoryId,select){
  try{await postJson("/vehicle/category",{vehicleId:Number(vehicleId),categoryId:Number(categoryId)});data=await getJson("/register-data");render()}
  catch(err){alert("Kunde inte spara fordonskategori: "+(err.message||err));data=await getJson("/register-data");render()}
  finally{select.disabled=false}
+}
+function openNewMaterial(){
+ const panel=$("newMaterialPanel"),station=$("newMaterialStation");
+ station.innerHTML=(data.stations||[]).filter(x=>x.active).map(x=>"<option value='"+x.id+"'>"+esc(x.name)+"</option>").join("");
+ const cats=[...new Set((data.material||[]).map(x=>String(x.category||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"sv"));
+ $("materialCategorySuggestions").innerHTML=cats.map(x=>"<option value='"+esc(x)+"'></option>").join("");
+ $("newMaterialMessage").className="message";
+ panel.style.display="block";
+ panel.scrollIntoView({behavior:"smooth",block:"nearest"});
+ $("newMaterialName").focus();
+}
+function closeNewMaterial(){$("newMaterialPanel").style.display="none"}
+async function createMaterial(){
+ const material=$("newMaterialName").value.trim(),category=$("newMaterialCategory").value.trim(),stationId=Number($("newMaterialStation").value),comment=$("newMaterialComment").value.trim(),m=$("newMaterialMessage"),btn=$("saveMaterialBtn");
+ if(!material){m.className="message active error";m.textContent="Ange material.";return}
+ if(!category){m.className="message active error";m.textContent="Ange kategori.";return}
+ if(!Number.isInteger(stationId)||stationId<1){m.className="message active error";m.textContent="Välj station.";return}
+ const station=(data.stations||[]).find(x=>Number(x.id)===stationId);
+ if(!confirm("Skapa nytt brandmaterial och placera det i "+(station?.name||"vald station")+"?"))return;
+ btn.disabled=true;m.className="message active";m.textContent="Skapar…";
+ try{
+   const result=await postJson("/material",{material,category,stationId,comment});
+   data=await getJson("/register-data");updateCounts();render();
+   $("newMaterialName").value="";$("newMaterialCategory").value="";$("newMaterialComment").value="";
+   m.className="message active ok";m.textContent="✓ "+result.materialId+" har skapats och lagts i "+(station?.name||"vald station")+".";
+ }catch(err){m.className="message active error";m.textContent=err.message||err}
+ finally{btn.disabled=false}
 }
 function exportExcel(){
  const cfg=views[currentView],rows=rowsFor(currentView),wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet(rows,{header:cfg.columns});
@@ -106,3 +133,7 @@ $("saveCategoryBtn").onclick=createCategory;
 $("newCategoryName").addEventListener("keydown",e=>{if(e.key==="Enter")createCategory()});
 $("tableBody").addEventListener("change",e=>{if(e.target.classList.contains("vehicle-category-select"))setVehicleCategory(e.target.dataset.vehicleId,e.target.value,e.target)});
 (async()=>{try{data=await getJson("/register-data");updateCounts();$("registerLoading").style.display="none";$("registerContent").style.display="block"}catch(err){$("registerLoading").style.display="none";$("registerError").className="message active error";$("registerError").textContent="Kunde inte hämta register: "+(err.message||err)}})();
+
+$("newMaterialBtn").addEventListener("click",openNewMaterial);
+$("cancelMaterialBtn").addEventListener("click",closeNewMaterial);
+$("saveMaterialBtn").addEventListener("click",createMaterial);
