@@ -7,17 +7,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;700&display=swap" rel="stylesheet">
-  
-  <link rel="stylesheet" href="style.css?v=20260922-register-v1">
-
+<link rel="stylesheet" href="style.css?v=20260922-rodlista-v1">
 </head>
 <body>
 <header>
   <div class="header-inner">
     <div class="brand-row">
-      <img class="skrtj-logo"
-           src="https://www.nykoping.se/globalassets/_system/logo-skrtj-ny.png"
-           alt="Sörmlandskustens räddningstjänst">
+      <img class="skrtj-logo" src="https://www.nykoping.se/globalassets/_system/logo-skrtj-ny.png" alt="Sörmlandskustens räddningstjänst">
     </div>
     <h1 class="brand-title">Brandmaterial</h1>
     <p id="headerText" class="header-subtitle">Lageröversikt och materialhantering</p>
@@ -25,209 +21,79 @@
 </header>
 <div class="header-rule" aria-hidden="true"></div>
 <main>
-  <!-- QR-läge -->
   <section class="qr-only">
     <div id="loading" class="card loading">Hämtar material…</div>
-
     <div id="materialCard" class="card" style="display:none">
       <div class="muted">Skannat material</div>
       <div id="materialId" class="material-id"></div>
       <div id="materialName" class="material-name"></div>
-
-      <div class="status">
-        <strong>Nuvarande placering</strong><br>
-        <span id="currentLocation">–</span><br>
-        <span id="lagerType" class="muted"></span>
-      </div>
-
+      <div class="status"><strong>Nuvarande placering</strong><br><span id="currentLocation">–</span><br><span id="lagerType" class="muted"></span></div>
       <div class="actions">
         <button id="checkinBtn" class="green">📥 CHECKA IN</button>
         <button id="checkoutBtn">📤 CHECKA UT</button>
         <button id="transportBtn" class="orange">🚚 TRANSPORT</button>
       </div>
-      <div style="margin-top:12px">
-        <button id="printExistingQrBtn" class="secondary" type="button">🖨 Skriv ut QR-etikett</button>
-      </div>
-
-      <div id="checkinPanel" class="panel">
-        <h3>Välj station</h3>
-        <p class="muted">Vald station sparas i Baserow efter bekräftelse.</p>
-        <div id="stationsList"></div>
-      </div>
-
-      <div id="checkoutPanel" class="panel">
-        <h3>Välj fordon</h3>
-        <p class="muted">Endast aktiva fordon på samma station visas. Valet sparas efter bekräftelse.</p>
-        <div id="vehiclesList"></div>
-      </div>
-
-      <div id="transportPanel" class="panel">
-        <h3>🚚 Transport till station</h3>
-        <p class="muted">Materialet lämnar sin nuvarande placering direkt och räknas inte i lager eller på fordon förrän det checkas in på destinationen.</p>
-        <div id="transportStationsList"></div>
-      </div>
-
+      <div style="margin-top:12px"><button id="printExistingQrBtn" class="secondary" type="button">🖨 Skriv ut QR-etikett</button></div>
+      <div id="checkinPanel" class="panel"><h3>Välj station</h3><p class="muted">Vald station sparas i Baserow efter bekräftelse.</p><div id="stationsList"></div></div>
+      <div id="checkoutPanel" class="panel"><h3>Välj fordon</h3><p class="muted">Endast aktiva fordon på samma station visas. Valet sparas efter bekräftelse.</p><div id="vehiclesList"></div></div>
+      <div id="transportPanel" class="panel"><h3>🚚 Transport till station</h3><p class="muted">Materialet lämnar sin nuvarande placering direkt och räknas inte i lager eller på fordon förrän det checkas in på destinationen.</p><div id="transportStationsList"></div></div>
       <div id="selectionMessage" class="message info"></div>
     </div>
-
     <div id="errorMessage" class="message error"></div>
   </section>
-
-
 
   <section class="home-only section">
     <div id="homeLoading" class="card loading">Hämtar lageröversikt…</div>
     <div id="homeError" class="message error"></div>
-
     <div id="homeContent" style="display:none">
       <div class="topbar">
-        <div>
-          <h2>Lageröversikt</h2>
-          <div class="muted">Visar dina valda stationer</div>
-        </div>
-        <div class="topbar-actions"><a href="register.html" class="settings-button register-link">▦ Register</a><button id="settingsBtn" class="settings-button" type="button">⚙ Inställningar</button></div>
+        <div><h2>Lageröversikt</h2><div class="muted">Visar dina valda stationer</div></div>
+        <button id="settingsBtn" class="settings-button" type="button">⚙ Inställningar</button>
       </div>
-
       <div class="selected-box"><strong>Mina stationer:</strong> <span id="selectedStationsLabel">–</span></div>
-
-      <div class="primary-actions">
-        <button id="addMaterialBtn" class="green" type="button">➕ Lägg till brandmaterial</button>
-      </div>
-
-      <div class="excel-actions">
-        <button id="importExcelBtn" type="button">⬆️ IMPORTERA EXCEL</button>
-        <button id="exportExcelBtn" type="button">⬇️ EXPORTERA EXCEL</button>
-        <button id="downloadTemplateBtn" type="button">📄 LADDA NER MALL</button>
-        <input id="excelFileInput" type="file" accept=".xlsx" hidden>
-      </div>
-      <div id="excelMessage" class="message"></div>
-
       <div class="stats">
         <div class="stat"><strong id="countStations">0</strong><span>Stationer</span></div>
         <div class="stat"><strong id="countStationStock">0</strong><span>Stationslager</span></div>
         <div class="stat"><strong id="countVehicleStock">0</strong><span>På fordon</span></div>
       </div>
-
       <div class="home-grid">
         <div class="card"><h3>🏢 Stationslager</h3><div id="stationOverview"></div></div>
         <div class="card"><h3>🚒 Fordon</h3><div id="vehicleOverview"></div></div>
       </div>
-
       <div class="order-actions">
         <button id="orderStockBtn" type="button">📦 BESTÄLLNING LAGER</button>
         <button id="orderExerciseBtn" type="button">🎯 BESTÄLLNING ÖVNING</button>
       </div>
-
       <div id="orderPanel" class="card order-panel">
-        <h3 id="orderTitle">Beställning</h3>
-        <p class="muted">Alla beställningar skickas till Nyköping.</p>
-        <label>Beställande station
-          <select id="orderStation"></select>
-        </label>
-        <label>Material
-          <select id="orderMaterial"></select>
-        </label>
-        <label>Antal
-          <input id="orderQuantity" type="number" min="1" step="1" value="1">
-        </label>
-        <label>Kommentar
-          <textarea id="orderComment" rows="3" placeholder="Valfri kommentar"></textarea>
-        </label>
-        <div class="actions">
-          <button id="submitOrderBtn" type="button">SKICKA BESTÄLLNING</button>
-          <button id="cancelOrderBtn" type="button" class="secondary">AVBRYT</button>
-        </div>
+        <h3 id="orderTitle">Beställning</h3><p class="muted">Alla beställningar skickas till Nyköping.</p>
+        <label>Beställande station<select id="orderStation"></select></label>
+        <label>Material<select id="orderMaterial"></select></label>
+        <label>Antal<input id="orderQuantity" type="number" min="1" step="1" value="1"></label>
+        <label>Kommentar<textarea id="orderComment" rows="3" placeholder="Valfri kommentar"></textarea></label>
+        <div class="actions"><button id="submitOrderBtn" type="button">SKICKA BESTÄLLNING</button><button id="cancelOrderBtn" type="button" class="secondary">AVBRYT</button></div>
         <div id="orderMessage" class="message"></div>
       </div>
-
       <div class="card orders-overview-card">
         <h3>📋 Aktuella beställningar <span id="countOrders" class="transport-count">0</span></h3>
-        <div class="order-columns">
-          <div><h4>📦 Lager</h4><div id="stockOrders"></div></div>
-          <div><h4>🎯 Övning</h4><div id="exerciseOrders"></div></div>
-        </div>
+        <div class="order-columns"><div><h4>📦 Lager</h4><div id="stockOrders"></div></div><div><h4>🎯 Övning</h4><div id="exerciseOrders"></div></div></div>
       </div>
-
-      <div class="card transport-overview-card">
-        <h3>🚚 Under transport <span id="countTransport" class="transport-count">0</span></h3>
-        <div id="transportOverview"></div>
-      </div>
-
-      <div id="addMaterialPanel" class="card panel">
-        <div class="topbar">
-          <div>
-            <h3>➕ Lägg till brandmaterial</h3>
-            <div class="muted">Material-ID skapas automatiskt.</div>
-          </div>
-          <button id="closeAddMaterialBtn" class="mini-button secondary" type="button">Stäng</button>
-        </div>
-
-        <div class="form-grid">
-          <div class="field full">
-            <label for="newMaterialName">Material *</label>
-            <input id="newMaterialName" type="text" placeholder="Exempel: Slang 42">
-          </div>
-          <div class="field">
-            <label for="newMaterialCategory">Kategori *</label>
-            <input id="newMaterialCategory" type="text" list="categorySuggestions" placeholder="Exempel: Slang">
-            <datalist id="categorySuggestions"></datalist>
-          </div>
-          <div class="field">
-            <label for="newMaterialStation">Station *</label>
-            <select id="newMaterialStation"></select>
-          </div>
-          <div class="field full">
-            <label for="newMaterialComment">Kommentar</label>
-            <textarea id="newMaterialComment" placeholder="Valfri kommentar"></textarea>
-          </div>
-        </div>
-
-        <div class="settings-actions">
-          <button id="createMaterialBtn" class="green" type="button">Skapa material</button>
-          <button id="cancelAddMaterialBtn" class="secondary" type="button">Avbryt</button>
-        </div>
-        <div id="createMaterialMessage" class="message"></div>
-        <div id="createdQr" class="created-qr" style="display:none">
-          <strong id="createdQrId"></strong>
-          <img id="createdQrImage" alt="QR-kod för material">
-          <div class="muted small">Skanna QR-koden för att öppna materialet.</div>
-          <button id="printQrBtn" class="print-button" type="button">🖨 Skriv ut etikett</button>
-        </div>
-      </div>
-
-      <div id="detailPanel" class="card panel">
-        <div class="topbar"><h3 id="detailTitle">Material</h3><button id="closeDetailBtn" class="mini-button secondary" type="button">Stäng</button></div>
-        <div id="detailList"></div>
-      </div>
-
+      <div class="card transport-overview-card"><h3>🚚 Under transport <span id="countTransport" class="transport-count">0</span></h3><div id="transportOverview"></div></div>
+      <div id="detailPanel" class="card panel"><div class="topbar"><h3 id="detailTitle">Material</h3><button id="closeDetailBtn" class="mini-button secondary" type="button">Stäng</button></div><div id="detailList"></div></div>
       <div id="settingsPanel" class="card panel">
-        <h3>⚙ Mina stationer</h3>
-        <p class="muted">Valet sparas på den här enheten tills du ändrar det.</p>
-        <label class="check-row"><input id="allStations" type="checkbox"><span>Alla stationer</span></label>
-        <div id="stationChecks"></div>
-        <div class="settings-actions">
-          <button id="saveSettingsBtn" class="green" type="button">Spara</button>
-          <button id="closeSettingsBtn" class="secondary" type="button">Avbryt</button>
-        </div>
+        <h3>⚙ Mina stationer</h3><p class="muted">Valet sparas på den här enheten tills du ändrar det.</p>
+        <label class="check-row"><input id="allStations" type="checkbox"><span>Alla stationer</span></label><div id="stationChecks"></div>
+        <div class="settings-actions"><button id="saveSettingsBtn" class="green" type="button">Spara</button><button id="closeSettingsBtn" class="secondary" type="button">Avbryt</button></div>
       </div>
     </div>
   </section>
-
   <div class="footer">Sörmlandskustens räddningstjänst · Brandmaterial</div>
 </main>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260922-register-v1"></script>
-
-
+<script src="app.js?v=20260922-rodlista-v1"></script>
 <div id="materialPlanModal" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-card material-plan-card">
-    <div class="modal-head">
-      <div><h2 id="materialPlanTitle">Materialplan</h2><p id="materialPlanSubtitle"></p></div>
-      <button id="closeMaterialPlanBtn" type="button" class="secondary">STÄNG</button>
-    </div>
+    <div class="modal-head"><div><h2 id="materialPlanTitle">Materialplan</h2><p id="materialPlanSubtitle"></p></div><button id="closeMaterialPlanBtn" type="button" class="secondary">STÄNG</button></div>
     <div id="materialPlanList"></div>
   </div>
 </div>
-
 </body>
 </html>
