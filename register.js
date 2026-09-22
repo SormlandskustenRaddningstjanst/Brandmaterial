@@ -24,7 +24,7 @@ function render(){
    let v=esc(r[c]);
    if(currentView==="material"&&c==="Material-ID"&&r[c])v="<a class='material-link' href='./?material="+encodeURIComponent(r[c])+"'>"+v+"</a>";
    if(currentView==="vehicles"&&c==="Fordonskategori"){
-     const options=(data.vehicleCategories||[]).filter(x=>x.active).map(x=>"<option value='"+x.id+"' "+(Number(x.id)===Number(r.__categoryId)?"selected":"")+">"+esc(x.name)+"</option>").join("");
+     const options=(data.vehicleCategories||[]).map(x=>"<option value='"+x.id+"' "+(Number(x.id)===Number(r.__categoryId)?"selected":"")+">"+esc(x.name)+"</option>").join("");
      v="<select class='vehicle-category-select' data-vehicle-id='"+r.__id+"'><option value=''>— Välj kategori —</option>"+options+"</select>";
    }
    return "<td>"+v+"</td>";
@@ -32,7 +32,7 @@ function render(){
 }
 function openView(view){currentView=view;$("listPanel").style.display="block";$("searchInput").value="";$("importMessage").className="message";$("newCategoryBtn").style.display=view==="vehicles"?"inline-block":"none";$("categoryPanel").style.display="none";render();$("listPanel").scrollIntoView({behavior:"smooth",block:"start"})}
 function renderCategoryList(){
- const list=(data.vehicleCategories||[]).filter(x=>x.active);
+ const list=(data.vehicleCategories||[]);
  $("categoryList").innerHTML=list.length?"<strong>Befintliga kategorier:</strong> "+list.map(x=>"<span>"+esc(x.name)+"</span>").join(""):"Inga kategorier skapade ännu.";
 }
 async function createCategory(){
