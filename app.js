@@ -2,10 +2,15 @@ const API = "https://ros-material-api.peter-hasselberg.workers.dev";
 
 const params = new URLSearchParams(location.search);
 const material = (params.get("material") || "").trim().toUpperCase();
+const consumable = (params.get("forbrukning") || "").trim().toUpperCase();
 
 const el = id => document.getElementById(id);
 
-if (material) {
+if (consumable) {
+  document.body.classList.add("qr-mode", "consumable-mode");
+  el("headerText").textContent = "Förbrukningsartikel";
+  startConsumableMode();
+} else if (material) {
   document.body.classList.add("qr-mode");
   el("headerText").textContent = "Skannat material";
   startQrMode();
@@ -100,6 +105,98 @@ async function editVehicleRequirement(requirement, vehicleLabel) {
     alert("Kunde inte spara fordonsnivån:\n" + (err.message || err));
   }
 }
+
+let currentConsumable = null;
+
+async function startConsumableMode() {
+  document.querySelector(".consumable-qr").style.display = "block";
+  if (!/^FORB-\d{3,5}$/.test(consumable)) {
+    showConsumableError("Ogiltigt Artikel-ID: " + consumable);
+    return;
+  }
+  try {
+    currentConsumable = await apiGet("/consumable/" + encodeURIComponent(consumable));
+    renderConsumable();
+    el("consumableLoading").style.display = "none";
+    el("consumableCard").style.display = "block";
+  } catch (err) {
+    showConsumableError(err.message);
+  }
+}
+
+function renderConsumable() {
+  const item = currentConsumable;
+  if (!item) return;
+  el("consumableId").textContent = item.articleId || consumable;
+  el("consumableName").textContent = item.article || "Okänd artikel";
+  el("consumableStation").textContent = item.station || "Station saknas";
+  el("consumableBalance").textContent = item.balance ?? 0;
+  el("consumableUnit").textContent = item.unit || "st";
+  el("consumableReorderAt").textContent = item.reorderAt == null ? "–" : item.reorderAt + " " + (item.unit || "st");
+  el("consumableTarget").textContent = item.target == null ? "–" : item.target + " " + (item.unit || "st");
+  const warning = el("consumableOrderWarning");
+  if (item.orderNeeded) {
+    warning.className = "message error active consumable-order-warning";
+    warning.innerHTML = "<strong>🔴 BESTÄLL</strong>" + (item.orderQuantity > 0 ? "<br>Beställ " + escapeHtml(item.orderQuantity) + " " + escapeHtml(item.unit || "st") + " för att nå önskat lager." : "");
+  } else {
+    warning.className = "message consumable-order-warning";
+    warning.textContent = "";
+  }
+}
+
+async function adjustConsumable(change) {
+  if (!Number.isInteger(change) || change === 0) return;
+  const before = Number(currentConsumable?.balance ?? 0);
+  const after = before + change;
+  if (after < 0) {
+    showConsumableMessage("Lagret kan inte bli negativt. Aktuellt saldo är " + before + ".", true);
+    return;
+  }
+  const sign = change > 0 ? "+" : "";
+  if (!confirm("Registrera " + sign + change + " " + (currentConsumable?.unit || "st") + " för " + (currentConsumable?.article || consumable) + "?\n\nSaldo: " + before + " → " + after)) return;
+  setConsumableButtonsDisabled(true);
+  showConsumableMessage("Sparar " + sign + change + "…", false);
+  try {
+    const result = await apiPost("/consumable/adjust", {articleId:consumable, change});
+    currentConsumable = result.item;
+    renderConsumable();
+    showConsumableMessage("✓ Registrerat " + sign + change + ". Nytt saldo: " + result.after + " " + (result.item?.unit || "st") + ".", false, true);
+    el("consumableCustomChange").value = "";
+  } catch (err) {
+    showConsumableMessage(err.message || String(err), true);
+  } finally {
+    setConsumableButtonsDisabled(false);
+  }
+}
+
+function setConsumableButtonsDisabled(disabled) {
+  document.querySelectorAll(".consumable-adjust").forEach(b => b.disabled = disabled);
+  el("consumableCustomBtn").disabled = disabled;
+}
+
+function showConsumableMessage(message, isError, isSuccess=false) {
+  const box = el("consumableMessage");
+  box.className = "message active " + (isError ? "error" : (isSuccess ? "success-box" : "info"));
+  box.textContent = message;
+}
+
+function showConsumableError(message) {
+  el("consumableLoading").style.display = "none";
+  el("consumableError").textContent = message;
+  el("consumableError").classList.add("active");
+}
+
+document.querySelectorAll(".consumable-adjust").forEach(button => {
+  button.addEventListener("click", () => adjustConsumable(Number(button.dataset.change)));
+});
+el("consumableCustomBtn")?.addEventListener("click", () => {
+  const change = Number(el("consumableCustomChange").value);
+  if (!Number.isInteger(change) || change === 0) {
+    showConsumableMessage("Ange ett heltal, till exempel -7 eller 20.", true);
+    return;
+  }
+  adjustConsumable(change);
+});
 
 async function startQrMode() {
   if (!/^SKRTJ-\d{5}$/.test(material)) {
@@ -1261,6 +1358,23 @@ window.onload = () => setTimeout(() => window.print(), 500);
 </html>`);
   w.document.close();
 }
+
+function printConsumableShelfQr() {
+  if (!currentConsumable) return;
+  const articleId = currentConsumable.articleId || consumable;
+  const articleName = currentConsumable.article || "";
+  const station = currentConsumable.station || "";
+  const qrUrl = location.origin + location.pathname + "?forbrukning=" + encodeURIComponent(articleId);
+  const qrSrc = "https://quickchart.io/qr?size=700&ecLevel=H&margin=2&text=" + encodeURIComponent(qrUrl);
+  const w = window.open("", "_blank", "width=700,height=800");
+  if (!w) { alert("Webbläsaren blockerade utskriftsfönstret. Tillåt popup-fönster och försök igen."); return; }
+  w.document.write(`<!DOCTYPE html><html lang="sv"><head><meta charset="UTF-8"><title>${escapeHtml(articleId)} – Hyll-QR</title><style>
+  @page{size:A6 portrait;margin:8mm}body{margin:0;font-family:Arial,Helvetica,sans-serif;text-align:center;color:#111}.label{border:2px solid #2a3768;padding:8mm}.title{font-size:22pt;font-weight:700;margin:0 0 2mm}.station{font-size:13pt;margin-bottom:5mm}.qr{width:75mm;height:75mm;margin:0 auto}.qr img{width:100%;height:100%;display:block}.id{font-size:14pt;font-weight:700;margin-top:4mm}.hint{font-size:11pt;margin-top:3mm}
+  </style></head><body><div class="label"><div class="title">${escapeHtml(articleName)}</div><div class="station">${escapeHtml(station)}</div><div class="qr"><img src="${qrSrc}" alt="QR-kod"></div><div class="id">${escapeHtml(articleId)}</div><div class="hint">Skanna för uttag eller påfyllning</div></div><script>window.onload=()=>setTimeout(()=>window.print(),500);<\/script></body></html>`);
+  w.document.close();
+}
+
+el("printConsumableQrBtn")?.addEventListener("click", printConsumableShelfQr);
 
 function printCreatedQr() {
   printMaterialLabel(
