@@ -799,26 +799,39 @@ function openStationMaterialPlan(station) {
       m.transportStatus !== "Under transport").length;
     const active = !!level;
     const redMax = level?.redBelow != null ? Math.max(0, Number(level.redBelow)-1) : 0;
-    const yellowMax = level?.greenFrom != null ? Math.max(redMax+1, Number(level.greenFrom)-1) : 1;
+    const greenFrom = level?.greenFrom != null ? Number(level.greenFrom) : 2;
+    const noYellow = active ? greenFrom === redMax + 1 : false;
+    const yellowMax = noYellow ? redMax : Math.max(redMax+1, greenFrom-1);
     const greenMax = level?.max != null ? Number(level.max) : 2;
     return "<div class='plan-row' data-material='"+escapeHtml(t.material)+"'>" +
       "<div class='plan-name'><strong>"+escapeHtml(t.material)+"</strong><span>"+escapeHtml(t.category||"")+" · Finns nu: "+count+"</span></div>" +
       "<label><input class='plan-stocked' type='checkbox' "+(active?"checked":"")+"> Ska finnas</label>" +
       "<label>🔴 t.o.m.<input class='plan-red' type='number' min='0' value='"+redMax+"'></label>" +
-      "<label>🟡 t.o.m.<input class='plan-yellow' type='number' min='0' value='"+yellowMax+"'></label>" +
-      "<label>🟢 MAX<input class='plan-green' type='number' min='0' value='"+greenMax+"'></label>" +
+      "<div class='yellow-level'><label>🟡 t.o.m.<input class='plan-yellow' type='number' min='0' value='"+yellowMax+"'></label>" +
+      "<label class='no-yellow'><input class='plan-no-yellow' type='checkbox' "+(noYellow?"checked":"")+"> Ingen gul</label></div>" +
+      "<label>🟢 MAX<input class='plan-green' type='number' min='1' value='"+greenMax+"'></label>" +
       "<button class='plan-save' type='button'>SPARA</button></div>";
   }).join("") || "<p>Inga materialtyper finns i Brandmaterial ännu.</p>";
 
   list.querySelectorAll(".plan-row").forEach(row => {
     const checkbox = row.querySelector(".plan-stocked");
-    const sync = () => row.querySelectorAll("input[type=number]").forEach(x => x.disabled = !checkbox.checked);
-    checkbox.addEventListener("change", sync); sync();
+    const noYellowBox = row.querySelector(".plan-no-yellow");
+    const yellowInput = row.querySelector(".plan-yellow");
+    const sync = () => {
+      row.querySelector(".plan-red").disabled = !checkbox.checked;
+      row.querySelector(".plan-green").disabled = !checkbox.checked;
+      noYellowBox.disabled = !checkbox.checked;
+      yellowInput.disabled = !checkbox.checked || noYellowBox.checked;
+    };
+    checkbox.addEventListener("change", sync);
+    noYellowBox.addEventListener("change", sync);
+    sync();
     row.querySelector(".plan-save").addEventListener("click", async () => {
       const body = {
         stationId:station.id, material:row.dataset.material, stocked:checkbox.checked,
         redMax:Number(row.querySelector(".plan-red").value),
-        yellowMax:Number(row.querySelector(".plan-yellow").value),
+        noYellow:noYellowBox.checked,
+        yellowMax:noYellowBox.checked ? null : Number(yellowInput.value),
         greenMax:Number(row.querySelector(".plan-green").value)
       };
       try {
