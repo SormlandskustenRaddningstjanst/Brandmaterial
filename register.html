@@ -41,15 +41,23 @@
         <div class="material-form-grid">
           <label>Artikel<input id="newConsumableName" type="text" maxlength="150" placeholder="Exempel: Absol"></label>
           <label>Kategori<input id="newConsumableCategory" type="text" maxlength="100" list="consumableCategorySuggestions" placeholder="Exempel: Absorptionsmedel"></label><datalist id="consumableCategorySuggestions"></datalist>
-          <label>Station<select id="newConsumableStation"></select></label><label>Enhet<input id="newConsumableUnit" type="text" maxlength="30" value="st"></label>
-          <label>Startsaldo<input id="newConsumableBalance" type="number" min="0" step="1" value="0"></label><label>Beställ vid<input id="newConsumableReorder" type="number" min="0" step="1" value="0"></label><label>Önskat lager<input id="newConsumableTarget" type="number" min="0" step="1" value="0"></label>
-          <label>Leverantör<input id="newConsumableSupplier" type="text" maxlength="150"></label><label>Artikelnummer<input id="newConsumableSupplierNo" type="text" maxlength="100"></label>
-          <label>Kontaktperson<input id="newConsumableContact" type="text" maxlength="150"></label><label>Telefon<input id="newConsumablePhone" type="tel" maxlength="50"></label><label>E-post<input id="newConsumableEmail" type="email" maxlength="200"></label>
-          <label>Kundnummer<input id="newConsumableCustomerNo" type="text" maxlength="100"></label><label>Avtalsnummer<input id="newConsumableAgreementNo" type="text" maxlength="100"></label>
-          <label>Förpackningsstorlek<input id="newConsumablePackageSize" type="number" min="0" step="1" value="0"></label><label>Minsta beställningsantal<input id="newConsumableMinOrder" type="number" min="0" step="1" value="0"></label>
+          <label class="full-width">Användningsområde<textarea id="newConsumableUsageArea" rows="4" maxlength="2000" placeholder="Beskriv vad artikeln används till…"></textarea></label>
+          <label>Station<select id="newConsumableStation"></select></label>
+          <label>Startsaldo<input id="newConsumableBalance" type="number" min="0" step="1" value="0"></label>
+          <label>Enhet<input id="newConsumableUnit" type="text" maxlength="30" value="st"></label>
+          <label>Beställ vid<input id="newConsumableReorder" type="number" min="0" step="1" value="0"></label>
+          <label>Önskat lager<input id="newConsumableTarget" type="number" min="0" step="1" value="0"></label>
+          <label>Förpackningsstorlek<input id="newConsumablePackageSize" type="number" min="0" step="1" value="0"></label>
+          <label>Minsta beställningsantal<input id="newConsumableMinOrder" type="number" min="0" step="1" value="0"></label>
+          <label>Leverantör<input id="newConsumableSupplier" type="text" maxlength="150"></label>
+          <label>Kontaktperson<input id="newConsumableContact" type="text" maxlength="150"></label>
+          <label>Telefon<input id="newConsumablePhone" type="tel" maxlength="50"></label>
+          <label>E-post<input id="newConsumableEmail" type="email" maxlength="200"></label>
+          <label>Kundnummer<input id="newConsumableCustomerNo" type="text" maxlength="100"></label>
+          <label>Avtalsnummer<input id="newConsumableAgreementNo" type="text" maxlength="100"></label>
+          <label>Artikelnummer<input id="newConsumableSupplierNo" type="text" maxlength="100"></label>
           <label class="full-width">Beställningslänk<input id="newConsumableOrderUrl" type="url" maxlength="500" placeholder="https://..."></label>
           <label class="full-width">Beställningskommentar<input id="newConsumableOrderComment" type="text" maxlength="500" placeholder="Exempel: Beställs via kommunens konto"></label>
-          <label class="full-width">Användningsområde<textarea id="newConsumableUsageArea" rows="4" maxlength="2000" placeholder="Beskriv vad artikeln används till…"></textarea></label>
           <label class="full-width">Kommentar<input id="newConsumableComment" type="text" maxlength="250"></label>
         </div>
         <div class="material-form-actions"><button id="saveConsumableBtn">SKAPA OCH VISA QR</button><button id="cancelConsumableBtn" class="secondary">AVBRYT</button></div><div id="newConsumableMessage" class="message"></div>
@@ -61,5 +69,5 @@
   <footer>Sörmlandskustens räddningstjänst · Brandmaterial</footer>
 </main>
 <div id="importOverlay" class="import-overlay" aria-hidden="true"><div class="import-modal" role="dialog" aria-modal="true" aria-labelledby="importOverlayTitle"><div id="importSpinner" class="import-spinner" aria-hidden="true"></div><h2 id="importOverlayTitle">Uppdatering pågår…</h2><p id="importOverlayText">Registret uppdateras. Stäng inte sidan.</p><button id="importOverlayClose" class="secondary" style="display:none">STÄNG</button></div></div>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="register.js?v=20260922-usage-v3"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="register.js?v=20260922-columns-v4"></script>
 </body></html>
