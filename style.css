@@ -117,3 +117,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
  .plan-name{grid-column:1/-1}
  .plan-save{grid-column:1/-1}
 }
+
+.yellow-level{display:flex;flex-direction:column;gap:4px}
+.yellow-level .no-yellow{display:flex;align-items:center;gap:5px;font-size:.72rem;font-weight:700}
+.yellow-level .no-yellow input{width:auto;margin:0}
