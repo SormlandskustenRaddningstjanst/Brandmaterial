@@ -1,6 +1,6 @@
 const API="https://ros-material-api.peter-hasselberg.workers.dev";
 const $=id=>document.getElementById(id);
-let data=null;
+let data=null, mode="stations";
 const STATION_STORAGE_KEY="skrtj-selected-stations-v1";
 
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -21,27 +21,41 @@ function myStations(){
   const ids=new Set(selectedStationIds());
   return (data.stations||[]).filter(s=>ids.has(Number(s.id))).sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"sv"));
 }
-function renderStationSelector(){
-  const stations=myStations();
-  $("targetSelect").innerHTML=stations.map(x=>`<option value="${x.id}">${esc(x.name||("Station "+x.id))}</option>`).join("");
-  if(!stations.length){
-    $("planTitle").textContent="Ingen station vald";
+function myVehicles(){
+  const ids=new Set(selectedStationIds());
+  return (data.vehicles||[]).filter(v=>ids.has(Number(v.stationId))).sort((a,b)=>String(a.rakel||"").localeCompare(String(b.rakel||""),"sv"));
+}
+function setMode(next){
+  mode=next;
+  $("stationsTab").classList.toggle("active",mode==="stations");
+  $("vehiclesTab").classList.toggle("active",mode==="vehicles");
+  const items=mode==="stations"
+    ? myStations().map(x=>({id:x.id,label:x.name||("Station "+x.id)}))
+    : myVehicles().map(x=>({id:x.id,label:[x.rakel,x.registration].filter(Boolean).join(" – ")||("Fordon "+x.id)}));
+  $("selectorCard").style.display=mode==="stations"?"none":"grid";
+  $("selectorLabel").textContent="Fordon på min station";
+  $("targetSelect").innerHTML=items.map(x=>`<option value="${x.id}">${esc(x.label)}</option>`).join("");
+  if(!items.length){
+    $("planTitle").textContent="Inget att visa";
     $("planHelp").textContent="Välj Mina stationer på Lageröversikten först.";
-    $("planList").innerHTML='<div class="empty">Du har ingen vald station.</div>';
+    $("planList").innerHTML='<div class="empty">Inga valbara poster för din station.</div>';
     return;
   }
   render();
 }
 function render(){
-  const stationId=Number($("targetSelect").value);
-  const station=myStations().find(x=>Number(x.id)===stationId);
-  if(!station){
-    $("planTitle").textContent="Ingen station vald";
-    $("planList").innerHTML='<div class="empty">Välj station under Mina stationer på Lageröversikten.</div>';
-    return;
+  const id=Number($("targetSelect").value);
+  if(mode==="stations"){
+    const station=myStations()[0];
+    if(!station){$("planList").innerHTML='<div class="empty">Välj Min station på Lageröversikten först.</div>';return;}
+    $("planTitle").textContent=station.name||("Station "+station.id);
+    renderStation(Number(station.id));
+  }else{
+    const vehicle=myVehicles().find(x=>Number(x.id)===id);
+    if(!vehicle){$("planList").innerHTML='<div class="empty">Fordonet tillhör inte din valda station.</div>';return;}
+    $("planTitle").textContent=[vehicle.rakel,vehicle.registration].filter(Boolean).join(" – ")||("Fordon "+vehicle.id);
+    renderVehicle(id);
   }
-  $("planTitle").textContent=station.name||("Station "+station.id);
-  renderStation(stationId);
 }
 function renderStation(stationId){
  $("planHelp").textContent="Välj vilka material som ska finnas och ange nivåerna.";
@@ -75,12 +89,41 @@ function bindStation(stationId){
   });
  });
 }
+function renderVehicle(vehicleId){
+  $("planHelp").textContent="Välj vilka material som ska finnas på fordonet och ange exakt antal.";
+  $("legend").textContent="Grön = exakt kravantal. Alla andra antal visas rött.";
+  const types=materialTypes(), reqs=data.vehicleRequirements||[], actual=data.material||[];
+  $("planList").innerHTML=types.map(t=>{
+    const req=reqs.find(x=>Number(x.vehicleId)===vehicleId&&key(x.material)===key(t.material));
+    const count=actual.filter(m=>Number(m.vehicleId)===vehicleId&&key(m.material)===key(t.material)).length;
+    return `<div class="plan-row vehicle" data-material="${esc(t.material)}">
+      <div class="plan-name"><strong>${esc(t.material)}</strong><span>${esc(t.category||"")} · Finns nu: ${count}</span></div>
+      <label class="check"><input class="stocked" type="checkbox" ${req?"checked":""}> Ska finnas</label>
+      <label>🟢 Exakt antal<input class="required" type="number" min="0" value="${esc(req?.required??0)}"></label>
+      <button class="plan-save" type="button">SPARA</button></div>`;
+  }).join("")||'<div class="empty">Inga materialtyper finns i Brandmaterial.</div>';
+  document.querySelectorAll(".plan-row").forEach(row=>{
+    const stocked=row.querySelector(".stocked"), input=row.querySelector(".required"), btn=row.querySelector(".plan-save");
+    const sync=()=>input.disabled=!stocked.checked; stocked.addEventListener("change",sync); sync();
+    btn.addEventListener("click",async()=>{
+      // Säkerhetskontroll även i UI: fordonet måste fortfarande ligga på vald station.
+      if(!myVehicles().some(v=>Number(v.id)===vehicleId)){alert("Fordonet tillhör inte din valda station.");return;}
+      btn.disabled=true;btn.textContent="SPARAR…";
+      try{
+        await apiPost("/vehicle-requirement/upsert",{vehicleId,material:row.dataset.material,stocked:stocked.checked,required:Number(input.value)});
+        data=await apiGet("/overview");btn.classList.add("saved");btn.textContent="SPARAT ✓";setTimeout(()=>render(),500);
+      }catch(e){alert(e.message||e);btn.disabled=false;btn.textContent="SPARA";}
+    });
+  });
+}
+$("stationsTab").addEventListener("click",()=>setMode("stations"));
+$("vehiclesTab").addEventListener("click",()=>setMode("vehicles"));
 $("targetSelect").addEventListener("change",render);
 (async()=>{try{
   data=await apiGet("/overview");
   $("loading").style.display="none";
   $("content").style.display="block";
-  renderStationSelector();
+  setMode("stations");
 }catch(e){
   $("loading").style.display="none";
   $("error").textContent=e.message;
