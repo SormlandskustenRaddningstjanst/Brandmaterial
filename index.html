@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260922-rodlista-v1">
+<link rel="stylesheet" href="style.css?v=20260922-forbrukning-qr-v1">
 </head>
 <body>
 <header>
@@ -21,7 +21,7 @@
 </header>
 <div class="header-rule" aria-hidden="true"></div>
 <main>
-  <section class="qr-only">
+  <section class="qr-only material-qr">
     <div id="loading" class="card loading">Hämtar material…</div>
     <div id="materialCard" class="card" style="display:none">
       <div class="muted">Skannat material</div>
@@ -40,6 +40,38 @@
       <div id="selectionMessage" class="message info"></div>
     </div>
     <div id="errorMessage" class="message error"></div>
+  </section>
+
+  <section class="qr-only consumable-qr" style="display:none">
+    <div id="consumableLoading" class="card loading">Hämtar förbrukningsartikel…</div>
+    <div id="consumableCard" class="card consumable-card" style="display:none">
+      <div class="muted">Förbrukningsartikel</div>
+      <div id="consumableId" class="material-id"></div>
+      <div id="consumableName" class="material-name"></div>
+      <div id="consumableStation" class="consumable-station"></div>
+      <div class="consumable-balance"><span id="consumableBalance">0</span> <span id="consumableUnit">st</span></div>
+      <div id="consumableOrderWarning" class="message consumable-order-warning"></div>
+      <h3>Registrera lagerförändring</h3>
+      <div class="consumable-adjust-grid">
+        <button type="button" class="consumable-adjust negative" data-change="-10">−10</button>
+        <button type="button" class="consumable-adjust negative" data-change="-5">−5</button>
+        <button type="button" class="consumable-adjust negative" data-change="-1">−1</button>
+        <button type="button" class="consumable-adjust positive" data-change="1">+1</button>
+        <button type="button" class="consumable-adjust positive" data-change="5">+5</button>
+        <button type="button" class="consumable-adjust positive" data-change="10">+10</button>
+      </div>
+      <div class="consumable-custom">
+        <label for="consumableCustomChange"><strong>Annat antal</strong></label>
+        <div><input id="consumableCustomChange" type="number" step="1" placeholder="t.ex. -7 eller +20"><button id="consumableCustomBtn" type="button">REGISTRERA</button></div>
+      </div>
+      <div id="consumableMessage" class="message"></div>
+      <div class="consumable-meta">
+        <div><strong>Beställ vid:</strong> <span id="consumableReorderAt">–</span></div>
+        <div><strong>Önskat lager:</strong> <span id="consumableTarget">–</span></div>
+      </div>
+      <button id="printConsumableQrBtn" class="secondary consumable-print" type="button">🖨 Skriv ut hyll-QR</button>
+    </div>
+    <div id="consumableError" class="message error"></div>
   </section>
 
   <section class="home-only section">
@@ -88,6 +120,6 @@
   </section>
   <div class="footer">Sörmlandskustens räddningstjänst · Brandmaterial</div>
 </main>
-<script src="app.js?v=20260922-rodlista-v1"></script>
+<script src="app.js?v=20260922-forbrukning-qr-v1"></script>
 </body>
 </html>
