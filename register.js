@@ -25,13 +25,13 @@ function boolText(v){return v?"Ja":"Nej"}
 const views={
  stations:{title:"Stationer",help:"Listan är alltid redigerbar. Stationsnummer är låst.",columns:["Stationsnummer","Station","Aktiv"],headers:["Stationsnummer","Station","Aktiv"],endpoint:"/stations/import",key:"Stationsnummer",editable:["Station","Aktiv"]},
  vehicles:{title:"Fordon",help:"Listan är alltid redigerbar. Registreringsnummer är låst.",columns:["Rakelnummer","Registreringsnummer","Fordonskategori","Station","Aktiv"],headers:["Rakelnummer","Registreringsnummer","Fordonskategori","Station","Aktiv"],endpoint:"/vehicles/import",key:"Registreringsnummer",editable:["Rakelnummer","Fordonskategori","Station","Aktiv"]},
- material:{title:"Brandmaterial",help:"Listan är alltid redigerbar. Material-ID och placering ändras inte här.",columns:["Material-ID","Material","Kategori","Användning","Station","Rakelnummer","Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"],headers:["Material-ID","Material","Kategori","Användning","Station","Rakelnummer","Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"],endpoint:"/material/bulk-update",key:"Material-ID",editable:["Material","Kategori","Användning","Kommentar","Aktiv"]},
+ material:{title:"Brandmaterial",help:"Listan är alltid redigerbar. Material-ID och placering ändras inte här.",columns:["Material-ID","Material","Kategori","Övningsmaterial","Station","Rakelnummer","Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"],headers:["Material-ID","Material","Kategori","Övningsmaterial","Station","Rakelnummer","Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"],endpoint:"/material/bulk-update",key:"Material-ID",editable:["Material","Kategori","Övningsmaterial","Kommentar","Aktiv"]},
  consumables:{title:"Förbrukningsartiklar",help:"Listan är alltid redigerbar. Artikel-ID, station och saldo är låsta; saldo ändras via lagerhändelser/QR.",columns:["Artikel-ID","Artikel","Kategori","Station","Saldo","Beställ vid","Önskat lager","Enhet","Leverantör","Artikelnummer","Kontaktperson","Telefon","E-post","Kundnummer","Avtalsnummer","Förpackningsstorlek","Minsta beställningsantal","Beställningslänk","Beställningskommentar","Användningsområde","Kommentar","Aktiv"],headers:["Artikel-ID","Artikel","Kategori","Station","Saldo","Beställ vid","Önskat lager","Enhet","Leverantör","Artikelnummer","Kontaktperson","Telefon","E-post","Kundnummer","Avtalsnummer","Förpackningsstorlek","Minsta beställningsantal","Beställningslänk","Beställningskommentar","Användningsområde","Kommentar","Aktiv"],endpoint:"/consumable/bulk-update",key:"Artikel-ID",editable:["Artikel","Kategori","Beställ vid","Önskat lager","Enhet","Leverantör","Artikelnummer","Kontaktperson","Telefon","E-post","Kundnummer","Avtalsnummer","Förpackningsstorlek","Minsta beställningsantal","Beställningslänk","Beställningskommentar","Användningsområde","Kommentar","Aktiv"]}
 };
 function rowsFor(view){
  if(view==="stations")return data.stations.map(x=>({"Stationsnummer":x.stationNumber,"Station":x.name,"Aktiv":boolText(x.active),__id:x.id}));
  if(view==="vehicles")return data.vehicles.map(x=>({"Rakelnummer":x.rakel,"Registreringsnummer":x.registration,"Fordonskategori":x.type,"Station":x.station,"Aktiv":boolText(x.active),__id:x.id,__categoryId:x.categoryId}));
- if(view==="material")return data.material.map(x=>({"Material-ID":x.materialId,"Material":x.material,"Kategori":x.category,"Användning":x.usage||"Brandmaterial","Station":x.station,"Rakelnummer":x.rakel,"Registreringsnummer":x.registration,"Kommentar":x.comment,"Aktiv":boolText(x.active),"Transportstatus":x.transportStatus,"Transport till station":x.transportDestination,__rowId:x.rowId}));
+ if(view==="material")return data.material.map(x=>({"Material-ID":x.materialId,"Material":x.material,"Kategori":x.category,"Övningsmaterial":boolText(x.exerciseMaterial===true),"Station":x.station,"Rakelnummer":x.rakel,"Registreringsnummer":x.registration,"Kommentar":x.comment,"Aktiv":boolText(x.active),"Transportstatus":x.transportStatus,"Transport till station":x.transportDestination,__rowId:x.rowId}));
  return (data.consumables||[]).map(x=>({"Artikel-ID":x.articleId,"Artikel":x.article,"Kategori":x.category,"Station":x.station,"Saldo":x.balance,"Beställ vid":x.reorderAt??"","Önskat lager":x.target??"","Enhet":x.unit,"Leverantör":x.supplier,"Artikelnummer":x.supplierArticleNumber,"Kontaktperson":x.contactPerson,"Telefon":x.phone,"E-post":x.email,"Kundnummer":x.customerNumber,"Avtalsnummer":x.agreementNumber,"Förpackningsstorlek":x.packageSize??"","Minsta beställningsantal":x.minimumOrderQuantity??"","Beställningslänk":x.orderUrl,"Beställningskommentar":x.orderComment,"Användningsområde":x.usageArea,"Kommentar":x.comment,"Aktiv":boolText(x.active),__rowId:x.rowId}));
 }
 function rowKey(r){return String(r[views[currentView].key]||"")}
@@ -68,7 +68,7 @@ function ensureEditModal(){
 function editFieldHtml(c,r){
  const val=r[c]??"";
  if(c==="Aktiv")return `<label>${esc(c)}<select data-edit-field="${esc(c)}"><option value="Ja" ${String(val)==="Ja"?"selected":""}>Ja</option><option value="Nej" ${String(val)!=="Ja"?"selected":""}>Nej</option></select></label>`;
- if(currentView==="material"&&c==="Användning")return `<label>${esc(c)}<select data-edit-field="${esc(c)}">${["Brandmaterial","Övningsmaterial","Båda"].map(x=>`<option ${x===val?"selected":""}>${x}</option>`).join("")}</select></label>`;
+ if(currentView==="material"&&c==="Övningsmaterial")return `<label>${esc(c)}<select data-edit-field="${esc(c)}"><option value="Ja" ${String(val)==="Ja"?"selected":""}>Ja</option><option value="Nej" ${String(val)!=="Ja"?"selected":""}>Nej</option></select></label>`;
  if(currentView==="vehicles"&&c==="Fordonskategori")return `<label>${esc(c)}<select data-edit-field="${esc(c)}"><option value="">— Välj kategori —</option>${(data.vehicleCategories||[]).map(x=>`<option value="${esc(x.name)}" ${x.name===val?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`;
  if(currentView==="vehicles"&&c==="Station")return `<label>${esc(c)}<select data-edit-field="${esc(c)}"><option value="">— Välj station —</option>${(data.stations||[]).filter(x=>x.active).map(x=>`<option value="${esc(x.name)}" ${x.name===val?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`;
  const type=["Beställ vid","Önskat lager","Förpackningsstorlek","Minsta beställningsantal"].includes(c)?"number":"text";
@@ -98,12 +98,8 @@ async function saveEditModal(){
   if(state.view==="stations")await postJson("/stations/import",{rows:[{"Stationsnummer":s["Stationsnummer"],"Station":d["Station"],"Aktiv":d["Aktiv"]}]});
   else if(state.view==="vehicles")await postJson("/vehicles/import",{rows:[{"Registreringsnummer":s["Registreringsnummer"],"Rakelnummer":d["Rakelnummer"],"Fordonskategori":d["Fordonskategori"],"Station":d["Station"],"Aktiv":d["Aktiv"]}]});
   else if(state.view==="material"){
-    // Användning sparas via den dedikerade endpointen för individuellt SKRTJ-ID.
-    // Övriga grunduppgifter sparas därefter separat.
-    if(String(d["Användning"]||"Brandmaterial")!==String(s["Användning"]||"Brandmaterial")){
-      await postJson("/material/usage",{materialId:s["Material-ID"],usage:d["Användning"]||"Brandmaterial"});
-    }
-    await postJson("/material/bulk-update",{rows:[{materialId:s["Material-ID"],material:d["Material"],category:d["Kategori"],comment:d["Kommentar"],active:d["Aktiv"]==="Ja"}]});
+    // Alla SKRTJ-ID är Brandmaterial. Övningsmaterial är endast en Ja/Nej-markering.
+    await postJson("/material/bulk-update",{rows:[{materialId:s["Material-ID"],material:d["Material"],category:d["Kategori"],exerciseMaterial:d["Övningsmaterial"]==="Ja",comment:d["Kommentar"],active:d["Aktiv"]==="Ja"}]});
    }
   else if(state.view==="consumables")await postJson("/consumable/bulk-update",{rows:[{articleId:s["Artikel-ID"],article:d["Artikel"],category:d["Kategori"],reorderAt:d["Beställ vid"],target:d["Önskat lager"],unit:d["Enhet"],supplier:d["Leverantör"],supplierArticleNumber:d["Artikelnummer"],contactPerson:d["Kontaktperson"],phone:d["Telefon"],email:d["E-post"],customerNumber:d["Kundnummer"],agreementNumber:d["Avtalsnummer"],packageSize:d["Förpackningsstorlek"],minimumOrderQuantity:d["Minsta beställningsantal"],orderUrl:d["Beställningslänk"],orderComment:d["Beställningskommentar"],usageArea:d["Användningsområde"],comment:d["Kommentar"],active:d["Aktiv"]==="Ja"}]});
   await refreshAll();closeEditModal();render();
@@ -161,7 +157,7 @@ function templateExcel(){
  const cfg=views[currentView];let sample={};
  if(currentView==="stations")sample={"Stationsnummer":"241-3000","Station":"Nyköping","Aktiv":"Ja"};
  if(currentView==="vehicles")sample={"Rakelnummer":"3010","Registreringsnummer":"NTE11B","Fordonskategori":"Släckbil","Station":"Nyköping","Aktiv":"Ja"};
- if(currentView==="material")sample={"Material-ID":"SKRTJ-00001","Material":"Exempel","Kategori":"Verktyg","Användning":"Brandmaterial","Station":"Nyköping","Rakelnummer":"","Registreringsnummer":"","Kommentar":"","Aktiv":"Ja","Transportstatus":"Ingen transport","Transport till station":""};
+ if(currentView==="material")sample={"Material-ID":"SKRTJ-00001","Material":"Exempel","Kategori":"Verktyg","Övningsmaterial":"Nej","Station":"Nyköping","Rakelnummer":"","Registreringsnummer":"","Kommentar":"","Aktiv":"Ja","Transportstatus":"Ingen transport","Transport till station":""};
  const wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet([sample],{header:cfg.columns});XLSX.utils.book_append_sheet(wb,ws,cfg.title.slice(0,31));XLSX.writeFile(wb,cfg.title+"_importmall.xlsx");
 }
 function showImportOverlay(state,title,text){
