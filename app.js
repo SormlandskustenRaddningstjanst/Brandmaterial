@@ -565,7 +565,7 @@ function escapeHtml(value) {
 const STATION_STORAGE_KEY = "skrtj-selected-stations-v1";
 
 const EXCEL_COLUMNS = [
-  "Material-ID","Material","Kategori","Användning","Station","Rakelnummer",
+  "Material-ID","Material","Kategori","Övningsmaterial","Station","Rakelnummer",
   "Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"
 ];
 
@@ -666,7 +666,7 @@ el("exportExcelBtn")?.addEventListener("click", async () => {
         "Material-ID": m.materialId || "",
         "Material": m.material || "",
         "Kategori": m.category || "",
-        "Användning": full["Användning"]?.value || full["Användning"] || m.usage || "Brandmaterial",
+        "Övningsmaterial": full["Övningsmaterial"] === true || m.exerciseMaterial === true ? "Ja" : "Nej",
         "Station": linkValue("Station"),
         "Rakelnummer": linkValue("Rakelnummer") || m.rakel || "",
         "Registreringsnummer": linkValue("Registreringsnummer"),
@@ -997,8 +997,7 @@ function renderHome() {
   const vehicles = overviewData.vehicles.filter(v => ids.includes(Number(v.stationId)));
   const vehicleIds = new Set(vehicles.map(v => Number(v.id)));
   const materialRows = overviewData.material.filter(m => {
-    const operational = String(m.usage || "Brandmaterial").trim().toLocaleLowerCase("sv-SE") !== "övningsmaterial";
-    return operational && ((m.stationId && ids.includes(Number(m.stationId))) ||
+    return ((m.stationId && ids.includes(Number(m.stationId))) ||
       (m.vehicleId && vehicleIds.has(Number(m.vehicleId))));
   });
 
@@ -1248,7 +1247,7 @@ async function createMaterial() {
     const response = await fetch(API + "/material", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({material: materialName, category, usage:"Brandmaterial", comment, stationId})
+      body: JSON.stringify({material: materialName, category, comment, stationId})
     });
 
     let data;
