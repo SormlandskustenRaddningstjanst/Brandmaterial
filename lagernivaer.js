@@ -7,6 +7,7 @@ function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 async function apiGet(path){const r=await fetch(API+path);let j;try{j=await r.json()}catch{throw new Error("API:t gav ett ogiltigt svar.")}if(!r.ok)throw new Error(j.error||j.message||"API-fel");return j;}
 async function apiPost(path,body){const r=await fetch(API+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});let j;try{j=await r.json()}catch{throw new Error("API:t gav ett ogiltigt svar.")}if(!r.ok)throw new Error(j.error||j.message||"API-fel");return j;}
 function key(v){return String(v||"").trim().toLocaleLowerCase("sv-SE");}
+function isOperationalMaterial(x){return key(x?.usage||"Brandmaterial")!==key("Övningsmaterial");}
 function materialTypes(){const m=new Map();for(const x of(data.material||[])){const name=String(x.material||"").trim();if(name&&!m.has(key(name)))m.set(key(name),{material:name,category:x.category||""});}return [...m.values()].sort((a,b)=>a.material.localeCompare(b.material,"sv"));}
 function selectedStationIds(){try{const p=JSON.parse(localStorage.getItem(STATION_STORAGE_KEY));if(p&&p.all===true)return(data.stations||[]).map(s=>Number(s.id));if(p&&Array.isArray(p.ids)&&p.ids.length)return p.ids.map(Number).filter(Number.isInteger);}catch{}return(data.stations||[]).map(s=>Number(s.id));}
 function myStations(){const ids=new Set(selectedStationIds());return(data.stations||[]).filter(s=>ids.has(Number(s.id))).sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"sv"));}
@@ -34,13 +35,13 @@ function clickableRow(title,meta,status,attrs=""){
 }
 function renderStation(stationId){
  $("planHelp").textContent="Klicka på ett material för att redigera lagernivåerna.";$("legend").textContent="Röd → Gul → Grön. Gul nivå kan väljas bort.";
- const types=materialTypes(),levels=data.stockLevels||[],actual=data.material||[];
+ const types=materialTypes(),levels=data.stockLevels||[],actual=(data.material||[]).filter(isOperationalMaterial);
  $("planList").innerHTML=types.map(t=>{const level=levels.find(x=>Number(x.stationId)===stationId&&key(x.material)===key(t.material));const count=actual.filter(m=>Number(m.stationId)===stationId&&key(m.material)===key(t.material)&&m.transportStatus!=="Under transport").length;let status='<span class="pill off">Ska inte finnas</span>';if(level){const red=Math.max(0,Number(level.redBelow)-1),noYellow=Number(level.greenFrom)===Number(level.redBelow),yellow=Math.max(red,Number(level.greenFrom)-1),max=Number(level.max);status=`<span class="pill">🔴 0–${red}</span>${noYellow?'':`<span class="pill">🟡 ${red+1}–${yellow}</span>`}<span class="pill">🟢 ${Number(level.greenFrom)}–${max}</span>`;}return clickableRow(t.material,`${t.category||""}${t.category?' · ':''}Finns nu: ${count}`,status,`data-action="station" data-id="${stationId}" data-material="${esc(t.material)}"`);}).join("")||'<div class="empty">Inga materialtyper finns i Brandmaterial.</div>';
  bindRowClicks();
 }
 function renderVehicle(vehicleId){
  $("planHelp").textContent="Klicka på ett material för att redigera kravantalet.";$("legend").textContent="Grön = exakt kravantal. Alla andra antal visas rött.";
- const types=materialTypes(),reqs=data.vehicleRequirements||[],actual=data.material||[];
+ const types=materialTypes(),reqs=data.vehicleRequirements||[],actual=(data.material||[]).filter(isOperationalMaterial);
  $("planList").innerHTML=types.map(t=>{const req=reqs.find(x=>Number(x.vehicleId)===vehicleId&&key(x.material)===key(t.material));const count=actual.filter(m=>Number(m.vehicleId)===vehicleId&&key(m.material)===key(t.material)).length;const status=req?`<span class="pill green">🟢 Exakt ${Number(req.required)}</span>`:'<span class="pill off">Ska inte finnas</span>';return clickableRow(t.material,`${t.category||""}${t.category?' · ':''}Finns nu: ${count}`,status,`data-action="vehicle" data-id="${vehicleId}" data-material="${esc(t.material)}"`);}).join("")||'<div class="empty">Inga materialtyper finns i Brandmaterial.</div>';
  bindRowClicks();
 }
