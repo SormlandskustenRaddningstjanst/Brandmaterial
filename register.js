@@ -70,9 +70,9 @@ function openEditModal(key){
  cfg.columns.forEach(c=>{if(cfg.editable.includes(c))html+=editFieldHtml(c,r);else html+=`<label>${esc(c)}<input class="register-edit-readonly" value="${esc(r[c]??"")}" readonly></label>`});
  $("registerEditFields").innerHTML=html;
  $("registerEditMessage").className="message register-edit-message";$("registerEditMessage").textContent="";
- $("registerEditModal").classList.add("active");$("registerEditModal").setAttribute("aria-hidden","false");
+ $("registerEditModal").classList.add("active");$("registerEditModal").setAttribute("aria-hidden","false");document.body.classList.add("modal-open");
 }
-function closeEditModal(){if(!editState)return;editState=null;$("registerEditModal").classList.remove("active");$("registerEditModal").setAttribute("aria-hidden","true")}
+function closeEditModal(){if(!editState)return;editState=null;$("registerEditModal").classList.remove("active");$("registerEditModal").setAttribute("aria-hidden","true");document.body.classList.remove("modal-open")}
 function modalValues(){const d={...editState.source};document.querySelectorAll("#registerEditFields [data-edit-field]").forEach(input=>d[input.dataset.editField]=input.value);return d}
 async function saveEditModal(){
  if(!editState)return;const state=editState,d=modalValues(),s=state.source,m=$("registerEditMessage"),save=$("registerEditSave"),cancel=$("registerEditCancel");
