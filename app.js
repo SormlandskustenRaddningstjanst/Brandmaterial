@@ -565,7 +565,7 @@ function escapeHtml(value) {
 const STATION_STORAGE_KEY = "skrtj-selected-stations-v1";
 
 const EXCEL_COLUMNS = [
-  "Material-ID","Material","Kategori","Station","Rakelnummer",
+  "Material-ID","Material","Kategori","Användning","Station","Rakelnummer",
   "Registreringsnummer","Kommentar","Aktiv","Transportstatus","Transport till station"
 ];
 
@@ -1221,7 +1221,7 @@ async function createMaterial() {
     const response = await fetch(API + "/material", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({material: materialName, category, comment, stationId})
+      body: JSON.stringify({material: materialName, category, usage:"Brandmaterial", comment, stationId})
     });
 
     let data;
