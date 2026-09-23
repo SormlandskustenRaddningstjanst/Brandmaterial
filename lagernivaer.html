@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="lagernivaer.css?v=20260922-forbrukning-v2">
+  <link rel="stylesheet" href="lagernivaer.css?v=20260923-click-edit-v1">
 </head>
 <body>
 <header>
@@ -57,6 +57,19 @@
   </section>
 </main>
 <footer>Sörmlandskustens räddningstjänst · Brandmaterial</footer>
-<script src="lagernivaer.js?v=20260923-ovning-v1"></script>
+<div id="editModal" class="edit-modal hidden" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+  <div class="edit-card">
+    <div class="edit-head">
+      <div><h3 id="editTitle">Redigera</h3><p id="editSubtitle" class="muted"></p></div>
+    </div>
+    <div id="editMessage" class="message"></div>
+    <div id="editFields" class="edit-fields"></div>
+    <div class="edit-actions">
+      <button id="editCancel" type="button" class="cancel-button">AVBRYT</button>
+      <button id="editSave" type="button" class="save-button">SPARA</button>
+    </div>
+  </div>
+</div>
+<script src="lagernivaer.js?v=20260923-click-edit-v1"></script>
 </body>
 </html>
