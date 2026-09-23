@@ -18,3 +18,109 @@ footer{text-align:center;color:#777;padding:25px 15px 40px}
 .plan-list{gap:7px}.level-row{width:100%;background:#fff;border:1px solid var(--border);padding:14px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto 22px;gap:14px;align-items:center;text-align:left;color:inherit}.level-row:hover,.level-row:focus-visible{border-color:var(--navy);background:#fafbff;outline:none}.level-main{min-width:0}.level-main strong{display:block;color:var(--navy);font-size:16px}.level-main small{display:block;color:var(--muted);font-weight:400;margin-top:2px}.level-status{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.level-arrow{font-size:30px;line-height:1;color:var(--navy);font-weight:400}.pill{display:inline-block;background:#f2f3f6;border:1px solid #d9dce5;padding:5px 7px;font-size:12px;font-weight:800;white-space:nowrap}.pill.green{background:#eef8f1;border-color:#b8ddc5;color:#176336}.pill.off{color:#667085;background:#f7f7f8}
 .edit-modal{position:fixed;inset:0;background:rgba(18,25,48,.58);z-index:1000;display:flex;align-items:center;justify-content:center;padding:18px}.edit-modal.hidden{display:none}.edit-card{width:min(620px,100%);max-height:92vh;overflow:auto;background:#fff;border-top:8px solid var(--yellow);box-shadow:0 18px 60px rgba(0,0,0,.28);padding:22px}.edit-head h3{margin:0;color:var(--navy);font-size:25px}.edit-head p{margin:3px 0 0}.edit-fields{display:grid;gap:16px;margin-top:18px}.edit-fields>label,.edit-grid label{font-size:13px;font-weight:800}.edit-fields input[type=number]{display:block;width:100%;margin-top:5px;padding:11px;border:1px solid #aeb4c2;font:inherit}.edit-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.modal-check{display:flex!important;align-items:center;gap:8px;font-size:15px!important}.modal-check input{width:20px;height:20px}.modal-check.small{font-size:12px!important;margin-top:7px;font-weight:700}.modal-check.small input{width:17px;height:17px}.edit-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px;padding-top:16px;border-top:1px solid var(--border)}.edit-actions button{padding:12px 18px}.cancel-button{background:#e8eaf0;color:var(--navy)}.save-button{background:var(--navy);color:#fff}.save-button:disabled{opacity:.55;cursor:wait}.modal-open{overflow:hidden}
 @media(max-width:700px){.level-row{grid-template-columns:minmax(0,1fr) 20px}.level-status{grid-column:1/-1;grid-row:2;justify-content:flex-start}.level-arrow{grid-column:2;grid-row:1}.edit-card{padding:18px}.edit-grid{grid-template-columns:1fr}.edit-actions{display:grid;grid-template-columns:1fr 1fr}.edit-actions button{width:100%}}
+
+
+/* Register Popup-v3 */
+body.modal-open{overflow:hidden}
+
+/* Import/uppdateringsruta */
+#importOverlay.import-overlay{
+  position:fixed!important;
+  inset:0!important;
+  z-index:100000!important;
+  display:none!important;
+  align-items:center!important;
+  justify-content:center!important;
+  padding:20px!important;
+  background:rgba(18,25,48,.62)!important;
+}
+#importOverlay.import-overlay.active{display:flex!important}
+#importOverlay .import-modal{
+  width:min(560px,calc(100vw - 32px))!important;
+  max-height:90vh!important;
+  overflow:auto!important;
+  background:#fff!important;
+  border:1px solid #cfd3df!important;
+  border-top:8px solid var(--yellow)!important;
+  box-shadow:0 22px 70px rgba(0,0,0,.35)!important;
+  padding:28px!important;
+  text-align:center!important;
+}
+#importOverlay .import-modal h2{margin:8px 0 8px;color:var(--navy);font-size:26px}
+#importOverlay .import-modal p{margin:0 0 18px;color:var(--muted);white-space:pre-line}
+#importOverlay .import-spinner{
+  width:46px!important;
+  height:46px!important;
+  margin:0 auto 18px!important;
+  border:5px solid #e2e5ed!important;
+  border-top-color:var(--navy)!important;
+  border-radius:50%!important;
+  animation:register-spin .8s linear infinite!important;
+}
+#importOverlay .import-modal.success{border-top-color:var(--green)!important}
+#importOverlay .import-modal.error-state{border-top-color:var(--red)!important}
+#importOverlay .import-modal button{padding:12px 20px}
+@keyframes register-spin{to{transform:rotate(360deg)}}
+
+/* Klicka på registerrad -> separat redigeringsruta */
+#registerEditModal{
+  position:fixed!important;
+  inset:0!important;
+  z-index:99999!important;
+  display:none!important;
+  align-items:center!important;
+  justify-content:center!important;
+  padding:20px!important;
+  background:rgba(18,25,48,.62)!important;
+}
+#registerEditModal.active{display:flex!important}
+#registerEditModal .register-edit-card{
+  width:min(720px,calc(100vw - 32px))!important;
+  max-height:90vh!important;
+  overflow:auto!important;
+  background:#fff!important;
+  border:1px solid #cfd3df!important;
+  border-top:8px solid var(--yellow)!important;
+  border-radius:0!important;
+  box-shadow:0 22px 70px rgba(0,0,0,.35)!important;
+  padding:24px!important;
+}
+#registerEditModal .register-edit-card h2{margin:0;color:var(--navy);font-size:26px}
+#registerEditModal .register-edit-grid{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:14px!important;
+  margin-top:18px!important;
+}
+#registerEditModal label{display:flex!important;flex-direction:column!important;gap:5px!important;font-weight:800!important;font-size:13px!important}
+#registerEditModal input,#registerEditModal select,#registerEditModal textarea{
+  width:100%!important;
+  box-sizing:border-box!important;
+  padding:11px!important;
+  border:1px solid #aeb4c2!important;
+  border-radius:0!important;
+  background:#fff!important;
+  font:inherit!important;
+}
+#registerEditModal .register-edit-readonly{background:#f1f2f5!important;color:#626979!important}
+#registerEditModal textarea{min-height:90px!important;resize:vertical!important}
+#registerEditModal .register-edit-actions{
+  display:flex!important;
+  justify-content:flex-end!important;
+  gap:10px!important;
+  margin-top:24px!important;
+  padding-top:16px!important;
+  border-top:1px solid var(--border)!important;
+}
+#registerEditModal .register-edit-actions button{padding:12px 18px!important}
+#registerEditModal #registerEditSave{background:var(--navy)!important;color:#fff!important}
+#registerEditModal #registerEditCancel{background:#e8eaf0!important;color:var(--navy)!important}
+#tableBody tr[data-row-key]{cursor:pointer}
+#tableBody tr[data-row-key]:hover{background:#fafbff}
+
+@media(max-width:700px){
+  #registerEditModal .register-edit-grid{grid-template-columns:1fr!important}
+  #registerEditModal .register-edit-actions{display:grid!important;grid-template-columns:1fr 1fr!important}
+  #registerEditModal .register-edit-actions button{width:100%!important}
+  #importOverlay .import-modal{padding:22px!important}
+}
