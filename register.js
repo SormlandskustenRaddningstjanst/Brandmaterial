@@ -19,20 +19,84 @@ function rowsFor(view){
  return (data.consumables||[]).map(x=>({"Artikel-ID":x.articleId,"Artikel":x.article,"Kategori":x.category,"Station":x.station,"Saldo":x.balance,"Beställ vid":x.reorderAt??"","Önskat lager":x.target??"","Enhet":x.unit,"Leverantör":x.supplier,"Artikelnummer":x.supplierArticleNumber,"Kontaktperson":x.contactPerson,"Telefon":x.phone,"E-post":x.email,"Kundnummer":x.customerNumber,"Avtalsnummer":x.agreementNumber,"Förpackningsstorlek":x.packageSize??"","Minsta beställningsantal":x.minimumOrderQuantity??"","Beställningslänk":x.orderUrl,"Beställningskommentar":x.orderComment,"Användningsområde":x.usageArea,"Kommentar":x.comment,"Aktiv":boolText(x.active),__rowId:x.rowId}));
 }
 function rowKey(r){return String(r[views[currentView].key]||"")}
-function sourceRow(key){return rowsFor(currentView).find(r=>rowKey(r)===key)}
-function draftRow(r){const k=rowKey(r);if(!draft.has(k)){const d={};views[currentView].columns.forEach(c=>d[c]=r[c]??"");draft.set(k,d)}return draft.get(k)}
-function syncDraftFromTable(){document.querySelectorAll("#tableBody tr[data-row-key]").forEach(tr=>{const d=draft.get(tr.dataset.rowKey);if(!d)return;tr.querySelectorAll("[data-field]").forEach(input=>d[input.dataset.field]=input.type==="checkbox"?(input.checked?"Ja":"Nej"):input.value)})}
-function changedRows(){syncDraftFromTable();const out=[];for(const [key,d] of draft){const s=sourceRow(key);if(!s)continue;if(views[currentView].editable.some(c=>String(d[c]??"")!==String(s[c]??"")))out.push({key,d,source:s})}return out}
-function updateDirtyState(){const n=changedRows().length;document.querySelectorAll(".register-save").forEach(b=>b.disabled=n===0);document.querySelectorAll(".register-dirty").forEach(x=>x.textContent=n?`${n} osparade ändring${n===1?"":"ar"}`:"Inga osparade ändringar")}
-function ensureEditControls(){let top=$("registerEditTop"),bottom=$("registerEditBottom");if(!top){top=document.createElement("div");top.id="registerEditTop";top.className="material-edit-actions";const search=$("searchInput").closest("label");search.parentNode.insertBefore(top,search)}if(!bottom){bottom=document.createElement("div");bottom.id="registerEditBottom";bottom.className="material-edit-actions";const wrap=$("tableBody").closest(".table-wrap");wrap.parentNode.insertBefore(bottom,wrap.nextSibling)}const html='<button class="register-save">SPARA</button><button class="secondary register-cancel">AVBRYT</button><span class="muted register-dirty">Inga osparade ändringar</span>';top.innerHTML=html;bottom.innerHTML=html;[top,bottom].forEach(box=>{box.querySelector(".register-save").onclick=saveCurrentView;box.querySelector(".register-cancel").onclick=cancelCurrentView});top.style.display=bottom.style.display=currentView?"flex":"none";updateDirtyState()}
-function inputFor(c,d,r){const val=d[c]??"";if(c==="Aktiv")return `<input type="checkbox" data-field="${esc(c)}" ${String(val)==="Ja"?"checked":""}>`;if(currentView==="material"&&c==="Användning")return `<select data-field="${esc(c)}">${["Brandmaterial","Övningsmaterial","Båda"].map(x=>`<option ${x===val?"selected":""}>${x}</option>`).join("")}</select>`;if(currentView==="vehicles"&&c==="Fordonskategori")return `<select data-field="${esc(c)}"><option value="">— Välj kategori —</option>${(data.vehicleCategories||[]).map(x=>`<option value="${esc(x.name)}" ${x.name===val?"selected":""}>${esc(x.name)}</option>`).join("")}</select>`;if(currentView==="vehicles"&&c==="Station")return `<select data-field="${esc(c)}"><option value="">— Välj station —</option>${(data.stations||[]).filter(x=>x.active).map(x=>`<option ${x.name===val?"selected":""}>${esc(x.name)}</option>`).join("")}</select>`;const type=["Beställ vid","Önskat lager","Förpackningsstorlek","Minsta beställningsantal"].includes(c)?"number":"text";return `<input type="${type}" data-field="${esc(c)}" value="${esc(val)}">`}
-function render(){const cfg=views[currentView],q=$("searchInput").value.trim().toLocaleLowerCase("sv-SE");$("listTitle").textContent=cfg.title;$("listHelp").textContent=cfg.help;$("tableHead").innerHTML="<tr>"+cfg.headers.map(h=>"<th>"+esc(h)+"</th>").join("")+"</tr>";const rows=rowsFor(currentView).filter(r=>!q||Object.values(r).some(v=>String(v).toLocaleLowerCase("sv-SE").includes(q)));$("tableBody").innerHTML=rows.map(r=>{const k=rowKey(r),d=draftRow(r);return `<tr data-row-key="${esc(k)}">`+cfg.columns.map(c=>{let v;if(cfg.editable.includes(c))v=inputFor(c,d,r);else{v=esc(r[c]);if(currentView==="material"&&c==="Material-ID"&&r[c])v=`<a class="material-link" href="./?material=${encodeURIComponent(r[c])}">${v}</a>`;if(currentView==="consumables"&&c==="Artikel-ID"&&r[c])v=`<a class="material-link" href="./?forbrukning=${encodeURIComponent(r[c])}">${v}</a>`;if(currentView==="consumables"&&c==="Beställningslänk"&&/^https?:\/\//i.test(String(r[c]||"")))v=`<a class="material-link" href="${esc(r[c])}" target="_blank" rel="noopener">Öppna</a>`}return `<td>${v}</td>`}).join("")+"</tr>"}).join("")||`<tr><td colspan="${cfg.columns.length}">Inga poster hittades.</td></tr>`;ensureEditControls()}
-function hasUnsaved(){return currentView&&changedRows().length>0}
-function closeCurrentView(){draft.clear();$("listPanel").style.display="none";currentView=null}
-function cancelCurrentView(){if(hasUnsaved()&&!confirm("Kasta alla osparade ändringar?"))return;closeCurrentView()}
+let editState=null;
+function ensureEditModal(){
+ if($("registerEditModal"))return;
+ const style=document.createElement("style");
+ style.textContent=`
+ #registerEditModal{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:9999;display:none;align-items:center;justify-content:center;padding:16px}
+ #registerEditModal.active{display:flex}
+ #registerEditModal .register-edit-card{background:#fff;width:min(720px,100%);max-height:90vh;overflow:auto;border-radius:12px;padding:20px;box-shadow:0 16px 50px rgba(0,0,0,.28)}
+ #registerEditModal .register-edit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+ #registerEditModal label{display:flex;flex-direction:column;gap:5px;font-weight:600}
+ #registerEditModal input,#registerEditModal select,#registerEditModal textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid #bbb;border-radius:6px;font:inherit}
+ #registerEditModal textarea{min-height:90px;resize:vertical}
+ #registerEditModal .register-edit-readonly{background:#f3f3f3}
+ #registerEditModal .register-edit-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+ #registerEditModal .register-edit-message{margin-top:10px}
+ #tableBody tr[data-row-key]{cursor:pointer}
+ #tableBody tr[data-row-key]:hover{background:rgba(0,0,0,.035)}
+ @media(max-width:650px){#registerEditModal .register-edit-grid{grid-template-columns:1fr}}
+ `;
+ document.head.appendChild(style);
+ const modal=document.createElement("div");
+ modal.id="registerEditModal";
+ modal.setAttribute("aria-hidden","true");
+ modal.innerHTML=`<div class="register-edit-card" role="dialog" aria-modal="true" aria-labelledby="registerEditTitle"><h2 id="registerEditTitle">Redigera</h2><p id="registerEditSubtitle" class="muted"></p><div id="registerEditFields" class="register-edit-grid"></div><div id="registerEditMessage" class="message register-edit-message"></div><div class="register-edit-actions"><button id="registerEditSave" class="green" type="button">SPARA</button><button id="registerEditCancel" class="secondary" type="button">AVBRYT</button></div></div>`;
+ document.body.appendChild(modal);
+ $("registerEditSave").onclick=saveEditModal;
+ $("registerEditCancel").onclick=closeEditModal;
+ modal.addEventListener("click",e=>{if(e.target===modal)closeEditModal()});
+ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&editState)closeEditModal()});
+}
+function editFieldHtml(c,r){
+ const val=r[c]??"";
+ if(c==="Aktiv")return `<label>${esc(c)}<select data-edit-field="${esc(c)}"><option value="Ja" ${String(val)==="Ja"?"selected":""}>Ja</option><option value="Nej" ${String(val)!=="Ja"?"selected":""}>Nej</option></select></label>`;
+ if(currentView==="material"&&c==="Användning")return `<label>${esc(c)}<select data-edit-field="${esc(c)}">${["Brandmaterial","Övningsmaterial","Båda"].map(x=>`<option ${x===val?"selected":""}>${x}</option>`).join("")}</select></label>`;
+ if(currentView==="vehicles"&&c==="Fordonskategori")return `<label>${esc(c)}<select data-edit-field="${esc(c)}"><option value="">— Välj kategori —</option>${(data.vehicleCategories||[]).map(x=>`<option value="${esc(x.name)}" ${x.name===val?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`;
+ if(currentView==="vehicles"&&c==="Station")return `<label>${esc(c)}<select data-edit-field="${esc(c)}"><option value="">— Välj station —</option>${(data.stations||[]).filter(x=>x.active).map(x=>`<option value="${esc(x.name)}" ${x.name===val?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`;
+ const type=["Beställ vid","Önskat lager","Förpackningsstorlek","Minsta beställningsantal"].includes(c)?"number":"text";
+ const textarea=["Kommentar","Beställningskommentar","Användningsområde"].includes(c);
+ return `<label>${esc(c)}${textarea?`<textarea data-edit-field="${esc(c)}">${esc(val)}</textarea>`:`<input type="${type}" data-edit-field="${esc(c)}" value="${esc(val)}">`}</label>`;
+}
+function openEditModal(key){
+ ensureEditModal();
+ const r=rowsFor(currentView).find(x=>rowKey(x)===key);if(!r)return;
+ editState={view:currentView,key,source:r};
+ const cfg=views[currentView];
+ $("registerEditTitle").textContent="Redigera "+cfg.title.replace(/er$/i,"");
+ $("registerEditSubtitle").textContent=key;
+ let html="";
+ cfg.columns.forEach(c=>{if(cfg.editable.includes(c))html+=editFieldHtml(c,r);else html+=`<label>${esc(c)}<input class="register-edit-readonly" value="${esc(r[c]??"")}" readonly></label>`});
+ $("registerEditFields").innerHTML=html;
+ $("registerEditMessage").className="message register-edit-message";$("registerEditMessage").textContent="";
+ $("registerEditModal").classList.add("active");$("registerEditModal").setAttribute("aria-hidden","false");
+}
+function closeEditModal(){if(!editState)return;editState=null;$("registerEditModal").classList.remove("active");$("registerEditModal").setAttribute("aria-hidden","true")}
+function modalValues(){const d={...editState.source};document.querySelectorAll("#registerEditFields [data-edit-field]").forEach(input=>d[input.dataset.editField]=input.value);return d}
+async function saveEditModal(){
+ if(!editState)return;const state=editState,d=modalValues(),s=state.source,m=$("registerEditMessage"),save=$("registerEditSave"),cancel=$("registerEditCancel");
+ const changed=views[state.view].editable.some(c=>String(d[c]??"")!==String(s[c]??""));if(!changed){closeEditModal();return}
+ save.disabled=cancel.disabled=true;m.className="message active";m.textContent="Sparar…";
+ try{
+  if(state.view==="stations")await postJson("/stations/import",{rows:[{"Stationsnummer":s["Stationsnummer"],"Station":d["Station"],"Aktiv":d["Aktiv"]}]});
+  else if(state.view==="vehicles")await postJson("/vehicles/import",{rows:[{"Registreringsnummer":s["Registreringsnummer"],"Rakelnummer":d["Rakelnummer"],"Fordonskategori":d["Fordonskategori"],"Station":d["Station"],"Aktiv":d["Aktiv"]}]});
+  else if(state.view==="material")await postJson("/material/bulk-update",{rows:[{materialId:s["Material-ID"],material:d["Material"],category:d["Kategori"],usage:d["Användning"],comment:d["Kommentar"],active:d["Aktiv"]==="Ja"}]});
+  else if(state.view==="consumables")await postJson("/consumable/bulk-update",{rows:[{articleId:s["Artikel-ID"],article:d["Artikel"],category:d["Kategori"],reorderAt:d["Beställ vid"],target:d["Önskat lager"],unit:d["Enhet"],supplier:d["Leverantör"],supplierArticleNumber:d["Artikelnummer"],contactPerson:d["Kontaktperson"],phone:d["Telefon"],email:d["E-post"],customerNumber:d["Kundnummer"],agreementNumber:d["Avtalsnummer"],packageSize:d["Förpackningsstorlek"],minimumOrderQuantity:d["Minsta beställningsantal"],orderUrl:d["Beställningslänk"],orderComment:d["Beställningskommentar"],usageArea:d["Användningsområde"],comment:d["Kommentar"],active:d["Aktiv"]==="Ja"}]});
+  await refreshAll();closeEditModal();render();
+ }catch(err){m.className="message active error";m.textContent="Kunde inte spara: "+(err.message||err)}finally{save.disabled=cancel.disabled=false}
+}
+function render(){
+ const cfg=views[currentView],q=$("searchInput").value.trim().toLocaleLowerCase("sv-SE");
+ $("listTitle").textContent=cfg.title;$("listHelp").textContent="Klicka på en rad för att redigera. SPARA verkställer ändringen, AVBRYT lämnar posten oförändrad.";
+ $("tableHead").innerHTML="<tr>"+cfg.headers.map(h=>"<th>"+esc(h)+"</th>").join("")+"</tr>";
+ const rows=rowsFor(currentView).filter(r=>!q||Object.values(r).some(v=>String(v).toLocaleLowerCase("sv-SE").includes(q)));
+ $("tableBody").innerHTML=rows.map(r=>{const k=rowKey(r);return `<tr data-row-key="${esc(k)}" tabindex="0">`+cfg.columns.map(c=>{let v=esc(r[c]);if(currentView==="material"&&c==="Material-ID"&&r[c])v=`<a class="material-link register-qr-link" href="./?material=${encodeURIComponent(r[c])}" title="Öppna QR-vy">${v}</a>`;if(currentView==="consumables"&&c==="Artikel-ID"&&r[c])v=`<a class="material-link register-qr-link" href="./?forbrukning=${encodeURIComponent(r[c])}" title="Öppna QR-vy">${v}</a>`;if(currentView==="consumables"&&c==="Beställningslänk"&&/^https?:\/\//i.test(String(r[c]||"")))v=`<a class="material-link register-external-link" href="${esc(r[c])}" target="_blank" rel="noopener">Öppna</a>`;return `<td>${v}</td>`}).join("")+"</tr>"}).join("")||`<tr><td colspan="${cfg.columns.length}">Inga poster hittades.</td></tr>`;
+}
+function closeCurrentView(){closeEditModal();$("listPanel").style.display="none";currentView=null}
+function cancelCurrentView(){closeCurrentView()}
 async function refreshAll(){const [registerData,consumableData]=await Promise.all([getJson("/register-data"),getJson("/consumables")]);data={...registerData,consumables:consumableData.items||[]};updateCounts()}
-async function saveCurrentView(){const changes=changedRows();if(!changes.length)return;document.querySelectorAll(".register-save,.register-cancel").forEach(b=>b.disabled=true);document.querySelectorAll(".register-dirty").forEach(x=>x.textContent=`Sparar ${changes.length} ändrade rader…`);try{if(currentView==="stations"){await postJson("/stations/import",{rows:changes.map(x=>({"Stationsnummer":x.source["Stationsnummer"],"Station":x.d["Station"],"Aktiv":x.d["Aktiv"]}))})}else if(currentView==="vehicles"){await postJson("/vehicles/import",{rows:changes.map(x=>({"Registreringsnummer":x.source["Registreringsnummer"],"Rakelnummer":x.d["Rakelnummer"],"Fordonskategori":x.d["Fordonskategori"],"Station":x.d["Station"],"Aktiv":x.d["Aktiv"]}))})}else if(currentView==="material"){await postJson("/material/bulk-update",{rows:changes.map(x=>({materialId:x.source["Material-ID"],material:x.d["Material"],category:x.d["Kategori"],usage:x.d["Användning"],comment:x.d["Kommentar"],active:x.d["Aktiv"]==="Ja"}))})}else if(currentView==="consumables"){await postJson("/consumable/bulk-update",{rows:changes.map(x=>({articleId:x.source["Artikel-ID"],article:x.d["Artikel"],category:x.d["Kategori"],reorderAt:x.d["Beställ vid"],target:x.d["Önskat lager"],unit:x.d["Enhet"],supplier:x.d["Leverantör"],supplierArticleNumber:x.d["Artikelnummer"],contactPerson:x.d["Kontaktperson"],phone:x.d["Telefon"],email:x.d["E-post"],customerNumber:x.d["Kundnummer"],agreementNumber:x.d["Avtalsnummer"],packageSize:x.d["Förpackningsstorlek"],minimumOrderQuantity:x.d["Minsta beställningsantal"],orderUrl:x.d["Beställningslänk"],orderComment:x.d["Beställningskommentar"],usageArea:x.d["Användningsområde"],comment:x.d["Kommentar"],active:x.d["Aktiv"]==="Ja"}))})}await refreshAll();closeCurrentView()}catch(err){alert("Kunde inte spara ändringarna:\n"+(err.message||err));document.querySelectorAll(".register-save,.register-cancel").forEach(b=>b.disabled=false);updateDirtyState()}}
-function openView(view){if(hasUnsaved()&&!confirm("Du har osparade ändringar. Kasta dem och öppna en annan lista?"))return;draft.clear();currentView=view;$("listPanel").style.display="block";$("searchInput").value="";$("importMessage").className="message";$("newCategoryBtn").style.display=view==="vehicles"?"inline-block":"none";$("newMaterialBtn").style.display=view==="material"?"inline-block":"none";$("newConsumableBtn").style.display=view==="consumables"?"inline-block":"none";$("importBtn").style.display=view==="consumables"?"none":"inline-block";$("templateBtn").style.display=view==="consumables"?"none":"inline-block";$("categoryPanel").style.display="none";$("newMaterialPanel").style.display="none";$("newConsumablePanel").style.display="none";render();$("listPanel").scrollIntoView({behavior:"smooth",block:"start"})}
+function openView(view){closeEditModal();currentView=view;$("listPanel").style.display="block";$("searchInput").value="";$("importMessage").className="message";$("newCategoryBtn").style.display=view==="vehicles"?"inline-block":"none";$("newMaterialBtn").style.display=view==="material"?"inline-block":"none";$("newConsumableBtn").style.display=view==="consumables"?"inline-block":"none";$("importBtn").style.display=view==="consumables"?"none":"inline-block";$("templateBtn").style.display=view==="consumables"?"none":"inline-block";$("categoryPanel").style.display="none";$("newMaterialPanel").style.display="none";$("newConsumablePanel").style.display="none";render();$("listPanel").scrollIntoView({behavior:"smooth",block:"start"})}
 function renderCategoryList(){const list=(data.vehicleCategories||[]);$("categoryList").innerHTML=list.length?"<strong>Befintliga kategorier:</strong> "+list.map(x=>"<span>"+esc(x.name)+"</span>").join(""):"Inga kategorier skapade ännu."}
 async function createCategory(){const name=$("newCategoryName").value.trim(),m=$("categoryMessage");if(!name){m.className="message active error";m.textContent="Ange ett kategorinamn.";return}m.className="message active";m.textContent="Skapar…";try{const result=await postJson("/vehicle-categories",{name});const reg=await getJson("/register-data");data={...reg,consumables:data.consumables||[]};updateCounts();renderCategoryList();render();$("newCategoryName").value="";m.className="message active ok";m.textContent=result.created?"Kategorin skapades.":"Kategorin finns redan och är tillgänglig."}catch(err){m.className="message active error";m.textContent=err.message||err}}
 function openNewMaterial(){
@@ -113,9 +177,8 @@ $("newCategoryBtn").onclick=()=>{$("categoryPanel").style.display="block";$("cat
 $("cancelCategoryBtn").onclick=()=>{$("categoryPanel").style.display="none"};
 $("saveCategoryBtn").onclick=createCategory;
 $("newCategoryName").addEventListener("keydown",e=>{if(e.key==="Enter")createCategory()});
-$("tableBody").addEventListener("input",updateDirtyState);
-$("tableBody").addEventListener("change",updateDirtyState);
-window.addEventListener("beforeunload",e=>{if(hasUnsaved()){e.preventDefault();e.returnValue=""}});
+$("tableBody").addEventListener("click",e=>{const link=e.target.closest("a");if(link)return;const tr=e.target.closest("tr[data-row-key]");if(tr)openEditModal(tr.dataset.rowKey)});
+$("tableBody").addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches("tr[data-row-key]")){e.preventDefault();openEditModal(e.target.dataset.rowKey)}});
 (async()=>{try{await refreshAll();$("registerLoading").style.display="none";$("registerContent").style.display="block"}catch(err){$("registerLoading").style.display="none";$("registerError").className="message active error";$("registerError").textContent="Kunde inte hämta register: "+(err.message||err)}})();
 
 $("newMaterialBtn").addEventListener("click",openNewMaterial);
