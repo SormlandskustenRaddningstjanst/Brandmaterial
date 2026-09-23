@@ -3,7 +3,18 @@ let data=null,currentView=null;
 let draft=new Map();
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-async function getJson(path){const r=await fetch(API+path);const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{}if(!r.ok)throw new Error(d.error||d.message||t||("HTTP "+r.status));return d}
+async function getJson(path){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+ try{
+  const r=await fetch(API+path,{signal:controller.signal,cache:"no-store"});
+  const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{}
+  if(!r.ok)throw new Error(d.error||d.message||t||("HTTP "+r.status));
+  return d;
+ }catch(err){
+  if(err?.name==="AbortError")throw new Error("API:t svarade inte inom 15 sekunder ("+path+").");
+  throw err;
+ }finally{clearTimeout(timer)}
+}
 async function postJson(path,body){const r=await fetch(API+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{}if(!r.ok)throw new Error((d.errors||[]).join("\n")||d.error||d.message||t||("HTTP "+r.status));return d}
 function boolText(v){return v?"Ja":"Nej"}
 const views={
@@ -102,7 +113,14 @@ function render(){
 }
 function closeCurrentView(){closeEditModal();$("listPanel").style.display="none";currentView=null}
 function cancelCurrentView(){closeCurrentView()}
-async function refreshAll(){const [registerData,consumableData]=await Promise.all([getJson("/register-data"),getJson("/consumables")]);data={...registerData,consumables:consumableData.items||[]};updateCounts()}
+async function refreshAll(){
+ const registerData=await getJson("/register-data");
+ let consumables=[];
+ try{const consumableData=await getJson("/consumables");consumables=consumableData.items||[]}
+ catch(err){console.warn("Förbrukningsartiklar kunde inte hämtas:",err)}
+ data={...registerData,consumables};
+ updateCounts();
+}
 function openView(view){closeEditModal();currentView=view;$("listPanel").style.display="block";$("searchInput").value="";$("importMessage").className="message";$("newCategoryBtn").style.display=view==="vehicles"?"inline-block":"none";$("newMaterialBtn").style.display=view==="material"?"inline-block":"none";$("newConsumableBtn").style.display=view==="consumables"?"inline-block":"none";$("importBtn").style.display=view==="consumables"?"none":"inline-block";$("templateBtn").style.display=view==="consumables"?"none":"inline-block";$("categoryPanel").style.display="none";$("newMaterialPanel").style.display="none";$("newConsumablePanel").style.display="none";render();$("listPanel").scrollIntoView({behavior:"smooth",block:"start"})}
 function renderCategoryList(){const list=(data.vehicleCategories||[]);$("categoryList").innerHTML=list.length?"<strong>Befintliga kategorier:</strong> "+list.map(x=>"<span>"+esc(x.name)+"</span>").join(""):"Inga kategorier skapade ännu."}
 async function createCategory(){const name=$("newCategoryName").value.trim(),m=$("categoryMessage");if(!name){m.className="message active error";m.textContent="Ange ett kategorinamn.";return}m.className="message active";m.textContent="Skapar…";try{const result=await postJson("/vehicle-categories",{name});const reg=await getJson("/register-data");data={...reg,consumables:data.consumables||[]};updateCounts();renderCategoryList();render();$("newCategoryName").value="";m.className="message active ok";m.textContent=result.created?"Kategorin skapades.":"Kategorin finns redan och är tillgänglig."}catch(err){m.className="message active error";m.textContent=err.message||err}}
@@ -180,7 +198,7 @@ $("closeList")&&($("closeList").onclick=cancelCurrentView);
 $("searchInput")?.addEventListener("input",render);$("exportBtn")&&($("exportBtn").onclick=exportExcel);$("templateBtn")&&($("templateBtn").onclick=templateExcel);
 $("importBtn")&&($("importBtn").onclick=()=>$("fileInput")?.click());$("fileInput")?.addEventListener("change",async e=>{try{if(e.target.files[0])await importFile(e.target.files[0])}catch(err){const message=err.message||String(err);const m=$("importMessage");m.className="message active error";m.textContent=message;showImportOverlay("error","Importen misslyckades",message)}finally{e.target.value=""}});
 $("importOverlayClose")&&($("importOverlayClose").onclick=hideImportOverlay);
-$("newCategoryBtn").onclick=()=>{$("categoryPanel").style.display="block";$("categoryMessage").className="message";renderCategoryList();$("newCategoryName").focus()};
+$("newCategoryBtn")&&($("newCategoryBtn").onclick=()=>{$("categoryPanel").style.display="block";$("categoryMessage").className="message";renderCategoryList();$("newCategoryName").focus()});
 $("cancelCategoryBtn")&&($("cancelCategoryBtn").onclick=()=>{$("categoryPanel").style.display="none"});
 $("saveCategoryBtn")&&($("saveCategoryBtn").onclick=createCategory);
 $("newCategoryName")?.addEventListener("keydown",e=>{if(e.key==="Enter")createCategory()});
