@@ -30,7 +30,7 @@ function render(){
  else{$("planTitle").textContent="Övningssortiment";renderExerciseRules();}
 }
 function clickableRow(title,meta,status,attrs=""){
- return `<button type="button" class="level-row" ${attrs}><span class="level-main"><strong>${esc(title)}</strong><small>${esc(meta||"")}</small></span><span class="level-status">${status}</span><span class="level-arrow">›</span></button>`;
+ return `<div class="level-row" role="button" tabindex="0" ${attrs}><span class="level-main"><strong>${esc(title)}</strong><small>${esc(meta||"")}</small></span><span class="level-status">${status}</span><span class="level-arrow" aria-hidden="true">›</span></div>`;
 }
 function renderStation(stationId){
  $("planHelp").textContent="Klicka på ett material för att redigera lagernivåerna.";$("legend").textContent="Röd → Gul → Grön. Gul nivå kan väljas bort.";
@@ -56,7 +56,7 @@ function renderExerciseRules(){
  $("planList").innerHTML=(exerciseRulesData.materials||[]).map(material=>{const r=rules.find(x=>key(x.material)===key(material));const status=r?.active?`<span class="pill green">Beställningsbar · max ${Number(r.maxQuantity||1)}</span>`:'<span class="pill off">Ej beställningsbar</span>';return clickableRow(material,"Övningsbeställning",status,`data-action="exercise" data-material="${esc(material)}"`);}).join("")||'<div class="empty">Inga materialtyper hittades.</div>';
  bindRowClicks();
 }
-function bindRowClicks(){document.querySelectorAll(".level-row").forEach(row=>row.addEventListener("click",()=>openEditModal(row)));}
+function bindRowClicks(){document.querySelectorAll(".level-row").forEach(row=>{row.addEventListener("click",()=>openEditModal(row));row.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openEditModal(row);}});});}
 
 function openEditModal(row){
  const action=row.dataset.action, material=row.dataset.material||"", id=Number(row.dataset.id||0), articleId=row.dataset.articleId||"";
@@ -93,6 +93,7 @@ function openEditModal(row){
 function closeEditModal(){$("editModal")?.classList.add("hidden");document.body.classList.remove("modal-open");}
 
 $("editCancel").addEventListener("click",closeEditModal);
+$("editClose").addEventListener("click",closeEditModal);
 $("editModal").addEventListener("click",e=>{if(e.target===$("editModal"))closeEditModal();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("editModal").classList.contains("hidden"))closeEditModal();});
 $("stationsTab").addEventListener("click",()=>setMode("stations"));
