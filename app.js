@@ -699,12 +699,37 @@ let consumableLevelsData = [];
 
 async function startHome() {
   try {
-    const [overview, consumables, consumableOrders, consumableLevels] = await Promise.all([apiGet("/overview"), apiGet("/consumables"), apiGet("/consumable-orders"), apiGet("/consumable-levels")]);
-    overviewData = overview;
-    consumablesData = Array.isArray(consumables?.items) ? consumables.items : [];
-    consumableOrdersData = Array.isArray(consumableOrders?.orders) ? consumableOrders.orders : [];
-    consumableLevelsData = Array.isArray(consumableLevels?.levels) ? consumableLevels.levels : [];
+    // Lageröversikten ska inte blockeras av förbrukningsartiklar eller beställningar.
+    // Hämta därför huvudöversikten först och visa sidan direkt.
+    overviewData = await apiGet("/overview");
     renderStationSettings();
+    renderHome();
+
+    // Kompletterande data laddas separat. Ett fel här får inte stoppa hela sidan.
+    const [consumablesResult, ordersResult, levelsResult] = await Promise.allSettled([
+      apiGet("/consumables"),
+      apiGet("/consumable-orders"),
+      apiGet("/consumable-levels")
+    ]);
+
+    if (consumablesResult.status === "fulfilled") {
+      consumablesData = Array.isArray(consumablesResult.value?.items) ? consumablesResult.value.items : [];
+    } else {
+      console.error("Kunde inte hämta förbrukningsartiklar:", consumablesResult.reason);
+    }
+
+    if (ordersResult.status === "fulfilled") {
+      consumableOrdersData = Array.isArray(ordersResult.value?.orders) ? ordersResult.value.orders : [];
+    } else {
+      console.error("Kunde inte hämta förbrukningsbeställningar:", ordersResult.reason);
+    }
+
+    if (levelsResult.status === "fulfilled") {
+      consumableLevelsData = Array.isArray(levelsResult.value?.levels) ? levelsResult.value.levels : [];
+    } else {
+      console.error("Kunde inte hämta förbrukningsnivåer:", levelsResult.reason);
+    }
+
     renderHome();
   } catch (err) {
     el("homeLoading").style.display = "none";
