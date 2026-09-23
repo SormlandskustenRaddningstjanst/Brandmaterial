@@ -18,7 +18,7 @@ async function apiGet(path){
 }
 async function apiPost(path,body){const r=await fetch(API+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});let j;try{j=await r.json()}catch{throw new Error("API:t gav ett ogiltigt svar.")}if(!r.ok)throw new Error(j.error||j.message||"API-fel");return j;}
 function key(v){return String(v||"").trim().toLocaleLowerCase("sv-SE");}
-function isOperationalMaterial(x){return key(x?.usage||"Brandmaterial")!==key("Övningsmaterial");}
+function isOperationalMaterial(){return true;}
 function materialTypes(){const m=new Map();for(const x of(data.material||[])){const name=String(x.material||"").trim();if(name&&!m.has(key(name)))m.set(key(name),{material:name,category:x.category||""});}return [...m.values()].sort((a,b)=>a.material.localeCompare(b.material,"sv"));}
 function selectedStationIds(){try{const p=JSON.parse(localStorage.getItem(STATION_STORAGE_KEY));if(p&&p.all===true)return(data.stations||[]).map(s=>Number(s.id));if(p&&Array.isArray(p.ids)&&p.ids.length)return p.ids.map(Number).filter(Number.isInteger);}catch{}return(data.stations||[]).map(s=>Number(s.id));}
 function myStations(){const ids=new Set(selectedStationIds());return(data.stations||[]).filter(s=>ids.has(Number(s.id))).sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"sv"));}
@@ -113,18 +113,4 @@ $("vehiclesTab").addEventListener("click",()=>setMode("vehicles"));
 $("consumablesTab").addEventListener("click",()=>setMode("consumables"));
 $("exerciseTab").addEventListener("click",()=>setMode("exercise"));
 $("targetSelect").addEventListener("change",render);
-(async()=>{
- try{
-  data=await apiGet("/overview");
-  const extras=await Promise.allSettled([apiGet("/consumable-levels"),apiGet("/exercise-rules")]);
-  if(extras[0].status==="fulfilled")consumableLevelsData=extras[0].value;
-  else console.warn("Förbrukningsnivåer kunde inte hämtas:",extras[0].reason);
-  if(extras[1].status==="fulfilled")exerciseRulesData=extras[1].value;
-  else console.warn("Övningsregler kunde inte hämtas:",extras[1].reason);
-  $("loading").style.display="none";$("content").style.display="block";setMode("stations");
- }catch(e){
-  $("loading").style.display="none";
-  $("error").textContent="Kunde inte hämta lagernivåer: "+(e.message||e);
-  $("error").classList.add("active");
- }
-})();
+(async()=>{try{data=await apiGet("/overview");const extras=await Promise.allSettled([apiGet("/consumable-levels"),apiGet("/exercise-rules")]);if(extras[0].status==="fulfilled")consumableLevelsData=extras[0].value;if(extras[1].status==="fulfilled")exerciseRulesData=extras[1].value;$("loading").style.display="none";$("content").style.display="block";setMode("stations");}catch(e){$("loading").style.display="none";$("error").textContent="Kunde inte hämta lagernivåer: "+(e.message||e);$("error").classList.add("active");}})();
