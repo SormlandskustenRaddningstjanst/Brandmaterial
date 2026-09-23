@@ -666,6 +666,7 @@ el("exportExcelBtn")?.addEventListener("click", async () => {
         "Material-ID": m.materialId || "",
         "Material": m.material || "",
         "Kategori": m.category || "",
+        "Användning": full["Användning"]?.value || full["Användning"] || m.usage || "Brandmaterial",
         "Station": linkValue("Station"),
         "Rakelnummer": linkValue("Rakelnummer") || m.rakel || "",
         "Registreringsnummer": linkValue("Registreringsnummer"),
@@ -995,10 +996,11 @@ function renderHome() {
   const stations = overviewData.stations.filter(s => ids.includes(Number(s.id)));
   const vehicles = overviewData.vehicles.filter(v => ids.includes(Number(v.stationId)));
   const vehicleIds = new Set(vehicles.map(v => Number(v.id)));
-  const materialRows = overviewData.material.filter(m =>
-    (m.stationId && ids.includes(Number(m.stationId))) ||
-    (m.vehicleId && vehicleIds.has(Number(m.vehicleId)))
-  );
+  const materialRows = overviewData.material.filter(m => {
+    const operational = String(m.usage || "Brandmaterial").trim().toLocaleLowerCase("sv-SE") !== "övningsmaterial";
+    return operational && ((m.stationId && ids.includes(Number(m.stationId))) ||
+      (m.vehicleId && vehicleIds.has(Number(m.vehicleId))));
+  });
 
   const stationStock = materialRows.filter(m => m.storageType === "Stationslager");
   const vehicleStock = materialRows.filter(m => m.storageType === "Fordon");
