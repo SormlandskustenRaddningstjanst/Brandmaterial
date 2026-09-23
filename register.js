@@ -176,21 +176,32 @@ async function importFile(file){
 }
 function updateCounts(){$("stationCount").textContent=data.stations.length+" poster";$("vehicleCount").textContent=data.vehicles.length+" poster";$("materialCount").textContent=data.material.length+" poster";$("consumableCount").textContent=(data.consumables||[]).length+" poster"}
 document.querySelectorAll(".register-tile").forEach(b=>b.addEventListener("click",()=>openView(b.dataset.view)));
-$("closeList").onclick=cancelCurrentView;
-$("searchInput").addEventListener("input",()=>{syncDraftFromTable();render()});$("exportBtn").onclick=exportExcel;$("templateBtn").onclick=templateExcel;
-$("importBtn").onclick=()=>$("fileInput").click();$("fileInput").addEventListener("change",async e=>{try{if(e.target.files[0])await importFile(e.target.files[0])}catch(err){const message=err.message||String(err);const m=$("importMessage");m.className="message active error";m.textContent=message;showImportOverlay("error","Importen misslyckades",message)}finally{e.target.value=""}});
-$("importOverlayClose").onclick=hideImportOverlay;
+$("closeList")&&($("closeList").onclick=cancelCurrentView);
+$("searchInput")?.addEventListener("input",render);$("exportBtn")&&($("exportBtn").onclick=exportExcel);$("templateBtn")&&($("templateBtn").onclick=templateExcel);
+$("importBtn")&&($("importBtn").onclick=()=>$("fileInput")?.click());$("fileInput")?.addEventListener("change",async e=>{try{if(e.target.files[0])await importFile(e.target.files[0])}catch(err){const message=err.message||String(err);const m=$("importMessage");m.className="message active error";m.textContent=message;showImportOverlay("error","Importen misslyckades",message)}finally{e.target.value=""}});
+$("importOverlayClose")&&($("importOverlayClose").onclick=hideImportOverlay);
 $("newCategoryBtn").onclick=()=>{$("categoryPanel").style.display="block";$("categoryMessage").className="message";renderCategoryList();$("newCategoryName").focus()};
-$("cancelCategoryBtn").onclick=()=>{$("categoryPanel").style.display="none"};
-$("saveCategoryBtn").onclick=createCategory;
-$("newCategoryName").addEventListener("keydown",e=>{if(e.key==="Enter")createCategory()});
-$("tableBody").addEventListener("click",e=>{const link=e.target.closest("a");if(link)return;const tr=e.target.closest("tr[data-row-key]");if(tr)openEditModal(tr.dataset.rowKey)});
-$("tableBody").addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches("tr[data-row-key]")){e.preventDefault();openEditModal(e.target.dataset.rowKey)}});
-(async()=>{try{await refreshAll();$("registerLoading").style.display="none";$("registerContent").style.display="block"}catch(err){$("registerLoading").style.display="none";$("registerError").className="message active error";$("registerError").textContent="Kunde inte hämta register: "+(err.message||err)}})();
+$("cancelCategoryBtn")&&($("cancelCategoryBtn").onclick=()=>{$("categoryPanel").style.display="none"});
+$("saveCategoryBtn")&&($("saveCategoryBtn").onclick=createCategory);
+$("newCategoryName")?.addEventListener("keydown",e=>{if(e.key==="Enter")createCategory()});
+$("tableBody")?.addEventListener("click",e=>{const link=e.target.closest("a");if(link)return;const tr=e.target.closest("tr[data-row-key]");if(tr)openEditModal(tr.dataset.rowKey)});
+$("tableBody")?.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches("tr[data-row-key]")){e.preventDefault();openEditModal(e.target.dataset.rowKey)}});
+(async()=>{try{
+  await refreshAll();
+  if($("registerLoading"))$("registerLoading").style.display="none";
+  if($("registerContent"))$("registerContent").style.display="block";
+}catch(err){
+  console.error("Register kunde inte starta:",err);
+  if($("registerLoading"))$("registerLoading").style.display="none";
+  if($("registerError")){
+    $("registerError").className="message active error";
+    $("registerError").textContent="Kunde inte hämta register: "+(err.message||err);
+  }
+}})();
 
-$("newMaterialBtn").addEventListener("click",openNewMaterial);
-$("cancelMaterialBtn").addEventListener("click",closeNewMaterial);
-$("saveMaterialBtn").addEventListener("click",createMaterial);
+$("newMaterialBtn")?.addEventListener("click",openNewMaterial);
+$("cancelMaterialBtn")?.addEventListener("click",closeNewMaterial);
+$("saveMaterialBtn")?.addEventListener("click",createMaterial);
 
 
 function openNewConsumable(){
@@ -222,6 +233,6 @@ async function createConsumable(){
   $("newConsumableUnit").value="st";$("newConsumableBalance").value="0";$("newConsumableReorder").value="0";$("newConsumableTarget").value="0";$("newConsumablePackageSize").value="0";$("newConsumableMinOrder").value="0";
  }catch(err){m.className="message active error";m.textContent=err.message||err}finally{btn.disabled=false}
 }
-$("newConsumableBtn").addEventListener("click",openNewConsumable);
-$("cancelConsumableBtn").addEventListener("click",closeNewConsumable);
-$("saveConsumableBtn").addEventListener("click",createConsumable);
+$("newConsumableBtn")?.addEventListener("click",openNewConsumable);
+$("cancelConsumableBtn")?.addEventListener("click",closeNewConsumable);
+$("saveConsumableBtn")?.addEventListener("click",createConsumable);
