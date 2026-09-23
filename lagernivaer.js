@@ -4,7 +4,18 @@ let data=null, consumableLevelsData={catalog:[],levels:[]}, exerciseRulesData={m
 const STATION_STORAGE_KEY="skrtj-selected-stations-v1";
 
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-async function apiGet(path){const r=await fetch(API+path);let j;try{j=await r.json()}catch{throw new Error("API:t gav ett ogiltigt svar.")}if(!r.ok)throw new Error(j.error||j.message||"API-fel");return j;}
+async function apiGet(path){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+ try{
+  const r=await fetch(API+path,{signal:controller.signal,cache:"no-store"});
+  let j;try{j=await r.json()}catch{throw new Error("API:t gav ett ogiltigt svar ("+path+").")}
+  if(!r.ok)throw new Error(j.error||j.message||"API-fel");
+  return j;
+ }catch(err){
+  if(err?.name==="AbortError")throw new Error("API:t svarade inte inom 15 sekunder ("+path+").");
+  throw err;
+ }finally{clearTimeout(timer)}
+}
 async function apiPost(path,body){const r=await fetch(API+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});let j;try{j=await r.json()}catch{throw new Error("API:t gav ett ogiltigt svar.")}if(!r.ok)throw new Error(j.error||j.message||"API-fel");return j;}
 function key(v){return String(v||"").trim().toLocaleLowerCase("sv-SE");}
 function isOperationalMaterial(x){return key(x?.usage||"Brandmaterial")!==key("Övningsmaterial");}
@@ -102,4 +113,18 @@ $("vehiclesTab").addEventListener("click",()=>setMode("vehicles"));
 $("consumablesTab").addEventListener("click",()=>setMode("consumables"));
 $("exerciseTab").addEventListener("click",()=>setMode("exercise"));
 $("targetSelect").addEventListener("change",render);
-(async()=>{try{[data,consumableLevelsData,exerciseRulesData]=await Promise.all([apiGet("/overview"),apiGet("/consumable-levels"),apiGet("/exercise-rules")]);$("loading").style.display="none";$("content").style.display="block";setMode("stations");}catch(e){$("loading").style.display="none";$("error").textContent=e.message;$("error").classList.add("active");}})();
+(async()=>{
+ try{
+  data=await apiGet("/overview");
+  const extras=await Promise.allSettled([apiGet("/consumable-levels"),apiGet("/exercise-rules")]);
+  if(extras[0].status==="fulfilled")consumableLevelsData=extras[0].value;
+  else console.warn("Förbrukningsnivåer kunde inte hämtas:",extras[0].reason);
+  if(extras[1].status==="fulfilled")exerciseRulesData=extras[1].value;
+  else console.warn("Övningsregler kunde inte hämtas:",extras[1].reason);
+  $("loading").style.display="none";$("content").style.display="block";setMode("stations");
+ }catch(e){
+  $("loading").style.display="none";
+  $("error").textContent="Kunde inte hämta lagernivåer: "+(e.message||e);
+  $("error").classList.add("active");
+ }
+})();
